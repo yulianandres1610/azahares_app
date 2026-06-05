@@ -1,10 +1,11 @@
 // Detalle de contenedor + inspección guiada de 3 pasos (API real).
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { captureRef } from 'react-native-view-shot';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
@@ -735,21 +736,47 @@ function DataField({
 function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspection | null; onChanged: () => void }) {
   const { t, showToast } = useApp();
   const [label, setLabel] = useState<InspectionLabelData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const labelRef = useRef<View>(null);
   const isAvailable = ['available', 'in_transit', 'in_vessel', 'delivered'].includes(c.status);
+  const es = t.locale === 'es';
 
   useEffect(() => {
     if (ins) Insp.getInspectionLabel(ins.id).then(setLabel).catch(() => {});
   }, [ins]);
 
-  const share = async () => {
-    const url = `${PUBLIC_WEB_URL}/inspeccion/${label?.publicToken ?? ''}`;
+  // Captura la etiqueta renderizada (con QR + barcode reales) como PNG.
+  const capture = async (result: 'tmpfile' | 'data-uri') => {
+    return captureRef(labelRef, { format: 'png', quality: 1, result });
+  };
+
+  const onShare = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
-      const html = `<html><body style="font-family:-apple-system;padding:24px"><h2>AZAHARES · INSPECTION</h2><p><b>${label?.inspectionNumber ?? ''}</b><br/>${c.number} · ${t('cycle')} ${label?.cycle ?? c.cycle}</p><p>${t('product')}: ${label?.productType ?? '—'}<br/>${t('sealTop')}: ${label?.sealTop ?? '—'}<br/>${t('sealBottom')}: ${label?.sealBottom ?? '—'}<br/>${t('fuelLevel')}: ${label?.fuelLevel ?? '—'}<br/>${t('inspector')}: ${label?.inspectorName ?? '—'}</p><p>${url}</p></body></html>`;
-      await Print.printAsync({ html });
-    } catch {
-      try {
-        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(url);
-      } catch {}
+      const uri = await capture('tmpfile');
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: t('thermalLabel') });
+      }
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPrint = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const dataUri = await capture('data-uri');
+      await Print.printAsync({
+        html: `<html><body style="margin:0;display:flex;align-items:center;justify-content:center;padding:24px"><img src="${dataUri}" style="width:100%;max-width:520px"/></body></html>`,
+      });
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -757,16 +784,24 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
     <View style={{ gap: 16 }}>
       <View>
         <PanelLabel icon="printer" text={t('thermalLabel')} />
-        {label ? <ThermalLabel data={label} t={t} /> : <ActivityIndicator color={colors.navy500} style={{ marginVertical: 20 }} />}
+        {/* ref para capturar la etiqueta como imagen al imprimir/compartir */}
+        <View ref={labelRef} collapsable={false} style={{ backgroundColor: '#fff', borderRadius: radius.lg }}>
+          {label ? <ThermalLabel data={label} t={t} /> : <ActivityIndicator color={colors.navy500} style={{ marginVertical: 20 }} />}
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 }}>
           <Icon name="qr" size={14} color={colors.ink40} />
           <AppText style={{ color: colors.ink40, fontSize: 11.5 }}>{t('scanToView')}</AppText>
         </View>
       </View>
 
-      <Button variant="outline" icon="share" onPress={share}>
-        {t('sharePrint')}
-      </Button>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <Button variant="outline" icon="share" onPress={onShare} loading={busy} style={{ flex: 1 }}>
+          {es ? 'Compartir' : 'Share'}
+        </Button>
+        <Button variant="primary" icon="printer" onPress={onPrint} loading={busy} style={{ flex: 1 }}>
+          {es ? 'Imprimir' : 'Print'}
+        </Button>
+      </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: alpha(colors.amber, 0.11), borderRadius: 14, padding: 14 }}>
         <Icon name="info" size={18} color={colors.amber} />
