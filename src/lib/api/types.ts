@@ -20,7 +20,7 @@ export interface Me {
   avatarUrl: string | null;
   role: Role;
   status: string | null;
-  provider?: string | null;
+  provider?: { id: string; name: string } | null;
   phone?: string | null;
   otpRequired?: boolean;
   otpEnforced?: boolean;

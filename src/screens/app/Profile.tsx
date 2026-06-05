@@ -102,7 +102,7 @@ export function Profile() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12, backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 13, paddingVertical: 7, borderRadius: 999 }}>
               <Icon name="map" size={15} color={colors.accent} />
               <AppText weight="600" style={{ color: '#fff', fontSize: 12.5 }}>
-                {me.provider}
+                {me.provider.name}
               </AppText>
             </View>
           ) : null}
