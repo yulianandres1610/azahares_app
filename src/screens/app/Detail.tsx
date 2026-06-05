@@ -4,6 +4,7 @@ import { ActivityIndicator, Dimensions, Image, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
@@ -28,7 +29,18 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const [delOpen, setDelOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const active = c ? stepOf(c) : 0;
+  // Paso activo. Tras complete-refuel el backend deja el contenedor en
+  // refuel_inspection pero la inspección ya tiene refuelCompletedAt → avanzar
+  // al paso Etiqueta (donde se marca disponible).
+  const active = !c
+    ? 0
+    : c.status === 'visual_inspection'
+    ? 0
+    : c.status === 'refuel_inspection'
+    ? ins?.refuelCompletedAt
+      ? 2
+      : 1
+    : 2;
 
   const loadInspection = useCallback(async () => {
     if (!c) return;
@@ -578,17 +590,29 @@ function RefuelPanel({
             </AppText>
           </View>
         )}
-        {hasVideo && (
-          <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: videoH, backgroundColor: '#1c2740', alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ width: 56, height: 56, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="video" size={26} color={colors.navy900} />
-            </View>
+        {hasVideo && video?.url && (
+          <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: videoH, backgroundColor: '#1c2740' }}>
+            <VideoPreview uri={video.url} height={videoH} />
             <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(16,185,129,0.92)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 }}>
               <CheckMark size={13} />
               <AppText weight="700" style={{ color: '#fff', fontSize: 11.5 }}>
                 {t('refuelVideo')}
               </AppText>
             </View>
+            {editable && (
+              <Tap
+                onPress={async () => {
+                  if (!ins || !video) return;
+                  try {
+                    await Insp.deleteInspectionMedia(ins.id, video.id);
+                    await reload();
+                  } catch {}
+                }}
+                style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="trash" size={16} color="#fff" />
+              </Tap>
+            )}
           </View>
         )}
       </View>
@@ -797,4 +821,13 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
       )}
     </View>
   );
+}
+
+// Preview de video con controles nativos (expo-video).
+function VideoPreview({ uri, height }: { uri: string; height: number }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
+  return <VideoView player={player} style={{ width: '100%', height }} contentFit="cover" nativeControls />;
 }
