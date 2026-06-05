@@ -26,9 +26,7 @@
       "package": "com.logirapid.azaharesfuel",
       "adaptiveIcon": {
         "backgroundColor": "#0d1b3d",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": ["CAMERA", "RECORD_AUDIO", "USE_BIOMETRIC", "USE_FINGERPRINT"]
