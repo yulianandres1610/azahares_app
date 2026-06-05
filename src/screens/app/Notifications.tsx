@@ -11,6 +11,22 @@ import { useApp, AppNotification, NotifKind } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
 import type { T } from '../../i18n';
 
+// Flotación infinita (azFloat) para el ícono del estado vacío.
+function FloatBox({ children }: { children: React.ReactNode }) {
+  const y = useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(y, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(y, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [y]);
+  return <Animated.View style={{ transform: [{ translateY: y.interpolate({ inputRange: [0, 1], outputRange: [0, -7] }) }] }}>{children}</Animated.View>;
+}
+
 const KIND: Record<NotifKind, { icon: IconName; color: string }> = {
   refuel: { icon: 'fuel', color: colors.amber },
   available: { icon: 'checkCircle', color: colors.success },
@@ -78,9 +94,11 @@ export function Notifications({ onClose }: { onClose: () => void }) {
       {/* empty */}
       {notifications.length === 0 && (
         <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 70, paddingHorizontal: 30 }}>
-          <View style={{ width: 88, height: 88, borderRadius: 28, backgroundColor: alpha(colors.success, 0.12), alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="checkCircle" size={42} color={colors.success} />
-          </View>
+          <FloatBox>
+            <View style={{ width: 88, height: 88, borderRadius: 28, backgroundColor: alpha(colors.success, 0.12), alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="checkCircle" size={42} color={colors.success} />
+            </View>
+          </FloatBox>
           <AppText serif weight="600" style={{ fontSize: 21, color: colors.ink, marginTop: 22 }}>
             {t('noNotifs')}
           </AppText>
@@ -153,7 +171,7 @@ function NotifCard({ n, i, t, onOpen, onRemove }: { n: AppNotification; i: numbe
             gap: 13,
             padding: 14,
             borderRadius: radius.lg,
-            backgroundColor: n.read ? colors.surface : alpha(colors.accent, 0.06),
+            backgroundColor: n.read ? colors.surface : '#f1f5fd',
             borderLeftWidth: 3,
             borderLeftColor: n.read ? 'transparent' : colors.accent,
             ...shadows.sm,
