@@ -13,7 +13,9 @@ import { Home } from './Home';
 import { Containers } from './Containers';
 import { Inspections } from './Inspections';
 import { Profile } from './Profile';
-import { NewContainer, Detail, Scan } from './Overlays';
+import { NewContainer } from './NewContainer';
+import { Detail } from './Detail';
+import { Scan } from './Scan';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
