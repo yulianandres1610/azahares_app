@@ -89,8 +89,8 @@ export function ContainerCard({ c, onPress }: { c: Container; onPress: () => voi
   const meta = statusMeta(c.status);
   const tt = TYPES[c.type] ?? { icon: 'cube' as const };
   const inspecting = c.status === 'visual_inspection' || c.status === 'refuel_inspection';
-  // sin detalle de inspección en la lista, mostramos progreso aproximado
-  const pct = c.status === 'visual_inspection' ? 0 : 66;
+  // progreso real: fotos visuales / 7 en visual; refuel ~70%
+  const pct = c.status === 'visual_inspection' ? Math.round(((c.visualPhotos ?? 0) / 7) * 100) : 70;
 
   return (
     <Card onPress={onPress} pad={14}>

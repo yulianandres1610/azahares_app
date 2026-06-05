@@ -26,6 +26,7 @@ function mapContainer(raw: any): Container {
     currency: raw.currency ?? 'USD',
     status: raw.status,
     cycle: raw.cycle ?? null,
+    visualPhotos: raw.visualPhotos ?? 0,
     updatedAt: raw.updatedAt ?? raw.createdAt ?? null,
     photoUrl: raw.photoUrl ?? null,
   };

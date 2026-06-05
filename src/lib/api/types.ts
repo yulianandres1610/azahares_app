@@ -52,6 +52,7 @@ export interface Container {
   currency?: string | null;
   status: ContainerStatus;
   cycle?: number | null;
+  visualPhotos?: number | null;
   updatedAt?: string | null;
   photoUrl?: string | null;
 }
