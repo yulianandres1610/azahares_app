@@ -332,11 +332,11 @@ function VisualPanel({
   const vc = ins ? ins.media.filter((m) => VISUAL_KINDS.includes(m.kind)).length : 0;
   const left = 7 - vc;
 
-  const upload = async (slot: InspectionMediaKind, uri: string) => {
+  const upload = async (slot: InspectionMediaKind, uri: string, mime?: string | null) => {
     if (!ins) return;
     setUploads((u) => ({ ...u, [slot]: 0 }));
     try {
-      await Insp.uploadInspectionMedia(ins.id, slot, uri, 'image/jpeg', (pct) => setUploads((u) => ({ ...u, [slot]: pct })));
+      await Insp.uploadInspectionMedia(ins.id, slot, uri, mime || 'image/jpeg', (pct) => setUploads((u) => ({ ...u, [slot]: pct })));
       haptic('success');
       await reload();
     } catch (e: any) {
@@ -364,7 +364,8 @@ function VisualPanel({
     }
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (res.canceled || !res.assets?.[0]) return;
-    upload(slot, res.assets[0].uri);
+    const a = res.assets[0];
+    upload(slot, a.uri, a.mimeType);
   };
 
   return (
