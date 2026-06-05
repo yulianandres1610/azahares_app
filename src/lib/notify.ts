@@ -1,9 +1,19 @@
 // Notificaciones locales con sonido (funcionan sin cuenta paga de Apple).
 // Cuando llega una notificación nueva, suena y muestra el banner.
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+
+// Carga defensiva de expo-device: si el módulo nativo no está enlazado,
+// no rompe el arranque de la app (degrada sin push remoto).
+function getDevice(): { isDevice?: boolean } | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('expo-device');
+  } catch {
+    return null;
+  }
+}
 
 // Handler: mostrar banner + reproducir sonido incluso con la app en primer plano.
 Notifications.setNotificationHandler({
@@ -40,7 +50,8 @@ export async function ensureNotifPermission(): Promise<boolean> {
 // Devuelve el Expo push token, o null si no se pudo.
 export async function registerForPushToken(): Promise<string | null> {
   try {
-    if (!Device.isDevice) return null; // push real solo en dispositivo físico
+    const Device = getDevice();
+    if (Device && Device.isDevice === false) return null; // push real solo en dispositivo físico
     const ok = await ensureNotifPermission();
     if (!ok) return null;
     if (Platform.OS === 'android') {
