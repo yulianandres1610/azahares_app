@@ -1,6 +1,6 @@
 // Home: dashboard de yarda con clima + gauges (datos reales).
-import React, { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
@@ -9,6 +9,35 @@ import { counts, statusMeta } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
 import type { T } from '../../i18n';
+
+// Entrada slide-up + fade (azUp del diseño).
+function FadeUp({ children, delay = 0, style }: { children: React.ReactNode; delay?: number; style?: any }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, { toValue: 1, duration: 500, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [a, delay]);
+  return (
+    <Animated.View style={[{ opacity: a, transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }, style]}>
+      {children}
+    </Animated.View>
+  );
+}
+
+// Flotación infinita (azFloat: 0 -> -7 -> 0).
+function Floating({ children, style }: { children: React.ReactNode; style?: any }) {
+  const y = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(y, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(y, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [y]);
+  return <Animated.View style={[{ transform: [{ translateY: y.interpolate({ inputRange: [0, 1], outputRange: [0, -7] }) }] }, style]}>{children}</Animated.View>;
+}
 
 export function Home() {
   const { t, me, containers } = useApp();
@@ -38,7 +67,7 @@ export function Home() {
   return (
     <Screen padBottom={108}>
       {/* greeting */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <FadeUp style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText weight="500" style={{ fontSize: 13.5, color: colors.ink50 }}>
             {t('yardConsole')}
@@ -51,12 +80,12 @@ export function Home() {
         <Tap onPress={() => nav.setTab('profile')}>
           <Avatar name={me?.fullName} src={me?.avatarUrl} size={42} />
         </Tap>
-      </View>
+      </FadeUp>
 
       <WeatherCard t={t} />
 
       {/* hero stat card */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+      <FadeUp delay={70} style={{ paddingHorizontal: 16, paddingTop: 14 }}>
         <View style={{ borderRadius: radius.xl, overflow: 'hidden', ...shadows.card }}>
           <LinearGradient colors={gradients.navyDeep} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={{ padding: 20 }}>
             <View
@@ -135,10 +164,10 @@ export function Home() {
             </View>
           </LinearGradient>
         </View>
-      </View>
+      </FadeUp>
 
       {/* CTAs */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, flexDirection: 'row', gap: 12 }}>
+      <FadeUp delay={130} style={{ paddingHorizontal: 16, paddingTop: 12, flexDirection: 'row', gap: 12 }}>
         <Tap onPress={() => nav.openOverlay({ type: 'new' })} hapticKind="medium" style={{ flex: 1.3 }}>
           <View style={{ borderRadius: radius.lg, overflow: 'hidden', minHeight: 94, ...shadows.card }}>
             <LinearGradient colors={gradients.navy} style={{ flex: 1, padding: 16, justifyContent: 'space-between' }}>
@@ -161,7 +190,7 @@ export function Home() {
             </AppText>
           </View>
         </Tap>
-      </View>
+      </FadeUp>
     </Screen>
   );
 }
@@ -192,7 +221,7 @@ function WeatherCard({ t }: { t: T }) {
     { h: '18:00', temp: 27, icon: 'cloud' as IconName },
   ];
   return (
-    <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+    <FadeUp delay={40} style={{ paddingHorizontal: 16, paddingTop: 14 }}>
       <View style={{ borderRadius: radius.xl, overflow: 'hidden', ...shadows.card }}>
         <LinearGradient colors={gradients.navyDeep} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={{ padding: 15 }}>
           <View style={{ position: 'absolute', width: 220, height: 220, borderRadius: 999, top: -120, right: -80, backgroundColor: alpha(colors.accent, 0.2) }} />
@@ -216,7 +245,9 @@ function WeatherCard({ t }: { t: T }) {
                 </AppText>
               </View>
             </View>
-            <Icon name={w.icon} size={58} color="#fff" />
+            <Floating>
+              <Icon name={w.icon} size={58} color="#fff" />
+            </Floating>
           </View>
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' }}>
@@ -252,6 +283,6 @@ function WeatherCard({ t }: { t: T }) {
           </ScrollView>
         </LinearGradient>
       </View>
-    </View>
+    </FadeUp>
   );
 }
