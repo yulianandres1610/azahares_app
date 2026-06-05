@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { alpha, colors, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
-import { AppText, Card, CheckMark, Chip, Field, IconButton, Screen, StatusBadge, Tap, haptic } from '../../components/ui';
+import { AppText, Card, CheckMark, Chip, EnterUp, Field, IconButton, Screen, StatusBadge, Tap, haptic } from '../../components/ui';
 import { statusMeta, stepOf } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
@@ -34,7 +34,7 @@ export function Inspections() {
   const nDone = records.filter((r) => r.phase === 'completed').length;
 
   return (
-    <Screen padBottom={108} contentStyle={{ paddingBottom: 120 }}>
+    <Screen padBottom={108} contentStyle={{ paddingBottom: 120 }} fadeBottom fadeTop>
       {/* resumen */}
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12 }}>
         <StatCard icon="camera" color={colors.accent} n={nProg} label={t('inProgress')} active={filter === 'inProgress'} onPress={() => setFilter(filter === 'inProgress' ? 'all' : 'inProgress')} />
@@ -63,7 +63,11 @@ export function Inspections() {
             </AppText>
           </View>
         ) : (
-          list.map((r) => <InspectionCard key={r.c.id} c={r.c} onPress={() => nav.openOverlay({ type: 'detail', id: r.c.id })} />)
+          list.map((r, i) => (
+            <EnterUp key={r.c.id} index={i}>
+              <InspectionCard c={r.c} onPress={() => nav.openOverlay({ type: 'detail', id: r.c.id })} />
+            </EnterUp>
+          ))
         )}
       </View>
     </Screen>

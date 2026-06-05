@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Modal,
   Pressable,
   PressableProps,
@@ -138,6 +139,25 @@ export function Glass({
   );
 }
 
+// ── EnterUp: entrada escalonada (azUp) para items de lista ───
+export function EnterUp({ index = 0, children, style }: { index?: number; children?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  const a = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(a, {
+      toValue: 1,
+      duration: 420,
+      delay: Math.min(index, 8) * 45,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [a, index]);
+  return (
+    <Animated.View style={[{ opacity: a, transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }, style]}>
+      {children}
+    </Animated.View>
+  );
+}
+
 // ── Screen: superficie con safe-area ─────────────────────────
 export function Screen({
   children,
@@ -148,6 +168,9 @@ export function Screen({
   contentStyle,
   style,
   scrollRef,
+  fadeBottom = false,
+  fadeTop = false,
+  onScroll,
 }: {
   children?: React.ReactNode;
   bg?: string;
@@ -157,6 +180,9 @@ export function Screen({
   contentStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
   scrollRef?: React.Ref<ScrollView>;
+  fadeBottom?: boolean;
+  fadeTop?: boolean;
+  onScroll?: React.ComponentProps<typeof ScrollView>['onScroll'];
 }) {
   const insets = useSafeAreaInsets();
   const pad: ViewStyle = {
@@ -166,16 +192,39 @@ export function Screen({
   if (!scroll) {
     return <View style={[{ flex: 1, backgroundColor: bg }, pad, style]}>{children}</View>;
   }
-  return (
+  const sv = (
     <ScrollView
       ref={scrollRef}
       style={[{ flex: 1, backgroundColor: bg }, style]}
       contentContainerStyle={[pad, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      onScroll={onScroll}
+      scrollEventThrottle={16}
     >
       {children}
     </ScrollView>
+  );
+  if (!fadeBottom && !fadeTop) return sv;
+  return (
+    <View style={{ flex: 1, backgroundColor: bg }}>
+      {sv}
+      {fadeTop && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[bg, alpha(bg, 0)]}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: (padTop ? insets.top : 0) + 14 }}
+        />
+      )}
+      {fadeBottom && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[alpha(bg, 0), bg]}
+          locations={[0, 0.65]}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: (insets.bottom || 0) + 116 }}
+        />
+      )}
+    </View>
   );
 }
 

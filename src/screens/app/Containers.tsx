@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { alpha, colors, radius } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
-import { AppText, Card, Chip, Field, Header, IconButton, Progress, Screen, StatusBadge, Skeleton } from '../../components/ui';
+import { AppText, Card, Chip, EnterUp, Field, Header, IconButton, Progress, Screen, StatusBadge, Skeleton } from '../../components/ui';
 import { TYPES, statusMeta } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
@@ -30,6 +30,8 @@ export function Containers() {
     <Screen
       padBottom={108}
       contentStyle={{ paddingBottom: 120 }}
+      fadeBottom
+      fadeTop
     >
       <Header
         title={t('containers')}
@@ -67,7 +69,11 @@ export function Containers() {
             </AppText>
           </View>
         ) : (
-          list.map((c) => <ContainerCard key={c.id} c={c} onPress={() => nav.openOverlay({ type: 'detail', id: c.id })} />)
+          list.map((c, i) => (
+            <EnterUp key={c.id} index={i}>
+              <ContainerCard c={c} onPress={() => nav.openOverlay({ type: 'detail', id: c.id })} />
+            </EnterUp>
+          ))
         )}
       </View>
     </Screen>
