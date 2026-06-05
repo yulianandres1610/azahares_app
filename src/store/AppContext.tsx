@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState as RNAppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
-import { getMe, otpLoginSuccess, otpSettings } from '../lib/api/me';
+import { getMe, otpLoginSuccess, otpSettings, savePushToken } from '../lib/api/me';
 import { listContainers } from '../lib/api/containers';
 import {
   listNotifications,
@@ -13,7 +13,7 @@ import {
   clearNotifsApi,
   type NotificationDto,
 } from '../lib/api/notifications';
-import { ensureNotifPermission, presentLocal } from '../lib/notify';
+import { ensureNotifPermission, presentLocal, registerForPushToken } from '../lib/notify';
 import type { Container, Me } from '../lib/api/types';
 import { CONFIG_OK } from '../config';
 import { deviceLocale, makeT, type Locale, type T } from '../i18n';
@@ -332,6 +332,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (phase !== 'ready') return;
     ensureNotifPermission();
+    // registra el token de push remoto (suena con la app cerrada)
+    registerForPushToken().then((tok) => {
+      if (tok) savePushToken(tok).catch(() => {});
+    });
     const sub = RNAppState.addEventListener('change', (st) => {
       if (st === 'active') refreshNotifications();
     });

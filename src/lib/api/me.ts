@@ -23,6 +23,11 @@ export function deleteAvatar(): Promise<Me> {
   return apiFetch<Me>('/me/avatar', { method: 'DELETE' });
 }
 
+// Guarda el token de push remoto del dispositivo.
+export function savePushToken(token: string): Promise<unknown> {
+  return apiFetch('/notifications/push-token', { method: 'POST', body: { token } });
+}
+
 // ── OTP ───────────────────────────────────────────────────────
 export function otpLoginSuccess(): Promise<unknown> {
   return apiFetch('/otp/login-success', { method: 'POST' });
