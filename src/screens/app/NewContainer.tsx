@@ -1,6 +1,6 @@
 // Wizard "Nuevo contenedor" (4 pasos) con creación real + fotos.
 import React, { useState } from 'react';
-import { Image, View } from 'react-native';
+import { Dimensions, Image, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
@@ -13,6 +13,9 @@ import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
 import { createContainer, uploadContainerImage } from '../../lib/api/containers';
 import { startInspection } from '../../lib/api/inspections';
+
+const TILE_W = (Dimensions.get('window').width - 32 - 10) / 2;
+const TILE_H = Math.round(TILE_W * 0.81);
 
 export function NewContainer({ onClose }: { onClose: () => void }) {
   const { t, refreshContainers, showToast } = useApp();
@@ -230,7 +233,7 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
                 {SIDES.map((label, i) => {
                   const data = d.photos[i];
                   return (
-                    <Tap key={i} onPress={() => setCam(i)} hapticKind={null} style={{ width: '48%', aspectRatio: 4 / 3.1, borderRadius: 16, overflow: 'hidden', backgroundColor: data ? '#1c2740' : colors.surface, borderWidth: data ? 0 : 1.5, borderColor: colors.line, borderStyle: data ? 'solid' : 'dashed' }}>
+                    <Tap key={i} onPress={() => setCam(i)} hapticKind={null} style={{ width: TILE_W, height: TILE_H, borderRadius: 16, overflow: 'hidden', backgroundColor: data ? '#1c2740' : colors.surface, borderWidth: data ? 0 : 1.5, borderColor: colors.line, borderStyle: data ? 'solid' : 'dashed' }}>
                       {data && <Image source={{ uri: data }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />}
                       <View style={{ position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: data ? 'rgba(8,14,33,0.55)' : 'transparent', paddingHorizontal: data ? 8 : 0, paddingVertical: data ? 4 : 0, borderRadius: 999 }}>
                         {data && <CheckMark size={13} color={colors.success} />}

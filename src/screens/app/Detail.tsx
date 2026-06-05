@@ -1,6 +1,6 @@
 // Detalle de contenedor + inspección guiada de 3 pasos (API real).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -416,13 +416,18 @@ function PhotoTile({
 }) {
   const { t } = useApp();
   const has = !!data;
+  // Dimensiones en píxeles explícitas (aspectRatio + % colapsaba dentro del wrap).
+  const gridW = Dimensions.get('window').width - 32; // padding 16*2
+  const colW = (gridW - 10) / 2; // dos columnas, gap 10
+  const w = full ? gridW : colW;
+  const h = full ? Math.round(gridW / 2) : Math.round(colW * 0.81);
   return (
     <Tap
       onPress={onPress}
       hapticKind={null}
       style={{
-        width: full ? '100%' : '48%',
-        aspectRatio: full ? 3 / 1.5 : 4 / 3.1,
+        width: w,
+        height: h,
         borderRadius: 16,
         overflow: 'hidden',
         backgroundColor: has ? '#1c2740' : colors.surface,
@@ -490,6 +495,7 @@ function RefuelPanel({
 
   const video = ins?.media.find((m) => m.kind === 'refuel_video');
   const hasVideo = !!video;
+  const videoH = Math.round(((Dimensions.get('window').width - 32) * 9) / 16);
   const canComplete = hasVideo && sealTop.trim() && sealBottom.trim();
 
   const saveData = async () => {
@@ -537,7 +543,7 @@ function RefuelPanel({
       <View>
         <PanelLabel icon="video" text={t('refuelVideo')} req={t('required')} />
         {!hasVideo && vup == null && (
-          <Tap onPress={recordVideo} hapticKind={null} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Tap onPress={recordVideo} hapticKind={null} style={{ width: '100%', height: videoH, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <View style={{ width: 52, height: 52, borderRadius: 999, backgroundColor: alpha(colors.error, 0.12), alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="video" size={26} color={colors.error} />
             </View>
@@ -548,7 +554,7 @@ function RefuelPanel({
           </Tap>
         )}
         {vup != null && (
-          <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: 'rgba(13,27,61,0.9)', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20 }}>
+          <View style={{ width: '100%', height: videoH, borderRadius: radius.lg, backgroundColor: 'rgba(13,27,61,0.9)', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20 }}>
             <Icon name="upload" size={26} color="#fff" />
             <View style={{ width: '70%' }}>
               <Progress value={vup} color={colors.accent} height={8} />
@@ -559,7 +565,7 @@ function RefuelPanel({
           </View>
         )}
         {hasVideo && (
-          <View style={{ borderRadius: radius.lg, overflow: 'hidden', aspectRatio: 16 / 9, backgroundColor: '#1c2740', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: videoH, backgroundColor: '#1c2740', alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ width: 56, height: 56, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="video" size={26} color={colors.navy900} />
             </View>
