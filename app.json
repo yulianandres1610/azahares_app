@@ -67,7 +67,8 @@
         {
           "locationWhenInUsePermission": "Azahares usa tu ubicación para mostrar el clima de la yarda."
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }

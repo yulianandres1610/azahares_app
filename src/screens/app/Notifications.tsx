@@ -34,7 +34,7 @@ const KIND: Record<NotifKind, { icon: IconName; color: string }> = {
   delivery: { icon: 'truck', color: colors.navy500 },
   coa: { icon: 'inspect', color: '#0ea5a0' },
   alert: { icon: 'alert', color: colors.error },
-  system: { icon: 'sparkle', color: '#8b6fe0' },
+  system: { icon: 'sparkle', color: colors.navy500 },
 };
 
 export function Notifications({ onClose }: { onClose: () => void }) {

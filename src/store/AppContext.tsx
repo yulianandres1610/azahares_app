@@ -1,5 +1,6 @@
 // Store central: sesión/auth, datos (contenedores), i18n y toast.
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState as RNAppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { getMe, otpLoginSuccess, otpSettings } from '../lib/api/me';
@@ -12,6 +13,7 @@ import {
   clearNotifsApi,
   type NotificationDto,
 } from '../lib/api/notifications';
+import { ensureNotifPermission, presentLocal } from '../lib/notify';
 import type { Container, Me } from '../lib/api/types';
 import { CONFIG_OK } from '../config';
 import { deviceLocale, makeT, type Locale, type T } from '../i18n';
@@ -133,12 +135,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localeRef = useRef<Locale>(locale);
   localeRef.current = locale;
+  const seenNotifIds = useRef<Set<string>>(new Set());
+  const notifInit = useRef(false);
 
   const refreshNotifications = useCallback(async () => {
     try {
       const { items } = await listNotifications();
       const es = localeRef.current === 'es';
-      setNotifications((items || []).map((d) => mapNotif(d, es)));
+      const mapped = (items || []).map((d) => mapNotif(d, es));
+      // Sonar por notificaciones nuevas sin leer (no en la línea base).
+      if (notifInit.current) {
+        const fresh = mapped.filter((n) => !n.read && !seenNotifIds.current.has(n.id));
+        fresh.forEach((n) => presentLocal(n.title, n.body));
+      } else {
+        notifInit.current = true;
+      }
+      mapped.forEach((n) => seenNotifIds.current.add(n.id));
+      setNotifications(mapped);
     } catch {
       // sin notificaciones / error → no romper
     }
@@ -314,6 +327,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Polling de notificaciones (suenan las nuevas): al volver a la app + cada 60s.
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    ensureNotifPermission();
+    const sub = RNAppState.addEventListener('change', (st) => {
+      if (st === 'active') refreshNotifications();
+    });
+    const iv = setInterval(() => refreshNotifications(), 60000);
+    return () => {
+      sub.remove();
+      clearInterval(iv);
+    };
+  }, [phase, refreshNotifications]);
 
   const value: AppState = {
     phase,
