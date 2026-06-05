@@ -9,7 +9,6 @@ import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
 import { AppText, Button, Card, CheckMark, IconButton, Progress, Ring, Screen, Sheet, StatusBadge, Tap, Field, haptic } from '../../components/ui';
 import * as ImagePicker from 'expo-image-picker';
-import { CameraCapture } from '../../components/Camera';
 import { ThermalLabel } from '../../components/Label';
 import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../domain';
 import { useApp } from '../../store/AppContext';
@@ -312,7 +311,6 @@ function VisualPanel({
   reload: () => Promise<void>;
 }) {
   const { t, showToast } = useApp();
-  const [cam, setCam] = useState<{ slot: InspectionMediaKind; hint: string } | null>(null);
   const [uploads, setUploads] = useState<Record<string, number>>({});
   const byKind = useMemo(() => {
     const m: Record<string, string | null> = {};
@@ -340,6 +338,23 @@ function VisualPanel({
     }
   };
 
+  // Captura con la cámara nativa de iOS (confiable).
+  const capture = async (slot: InspectionMediaKind) => {
+    if (!editable) {
+      showToast(t.locale === 'es' ? 'Esta inspección es de solo lectura' : 'This inspection is read-only', 'warn');
+      return;
+    }
+    if (uploads[slot] != null) return;
+    const cam = await ImagePicker.requestCameraPermissionsAsync();
+    if (!cam.granted) {
+      showToast(t('camUnavailable'), 'warn');
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (res.canceled || !res.assets?.[0]) return;
+    upload(slot, res.assets[0].uri);
+  };
+
   return (
     <View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
@@ -355,7 +370,7 @@ function VisualPanel({
               uploading={up}
               editable={editable}
               full={full}
-              onPress={() => editable && up == null && setCam({ slot: slot.key, hint: t.slot(slot.key) })}
+              onPress={() => capture(slot.key)}
             />
           );
         })}
@@ -380,20 +395,6 @@ function VisualPanel({
             {t('completeVisual')} {vc < 7 ? `(${left})` : ''}
           </Button>
         </View>
-      )}
-
-      {cam && (
-        <CameraCapture
-          mode="photo"
-          title={t('visualInspection')}
-          hint={cam.hint}
-          onClose={() => setCam(null)}
-          onCapture={(uri) => {
-            const slot = cam.slot;
-            setCam(null);
-            upload(slot, uri);
-          }}
-        />
       )}
     </View>
   );
