@@ -48,7 +48,9 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
   const SIDES = [t('sideFront'), t('sideRight'), t('sideBack'), t('sideLeft')];
   const steps = [t('identity'), t('spec'), t('ownerShort'), t('review')];
   const LAST = 3;
-  const canNext = step === 0 ? d.number.trim().length >= 4 : step === 1 ? !!(d.capacity && d.tare) : step === 2 ? !!String(d.price).trim() : photoCount === 4;
+  // ISO 6346: 4 letras + 7 dígitos (ej. RFCU1234567)
+  const numberValid = /^[A-Z]{4}[0-9]{7}$/.test(d.number.trim());
+  const canNext = step === 0 ? numberValid : step === 1 ? !!(d.capacity && d.tare) : step === 2 ? !!String(d.price).trim() : photoCount === 4;
 
   const next = () => {
     if (step < LAST) {
@@ -111,7 +113,16 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
       <View style={{ paddingHorizontal: 16 }}>
         {step === 0 && (
           <View style={{ gap: 20 }}>
-            <Field label={t('number')} icon="box" placeholder="AZ-IT-204XXX" value={d.number} onChangeText={(v) => set('number', v.toUpperCase())} autoFocus />
+            <Field
+              label={t('number')}
+              icon="box"
+              placeholder="RFCU1234567"
+              value={d.number}
+              onChangeText={(v) => set('number', v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11))}
+              autoFocus
+              invalid={d.number.length > 0 && !numberValid}
+              hint={t.locale === 'es' ? '4 letras + 7 dígitos (ISO 6346)' : '4 letters + 7 digits (ISO 6346)'}
+            />
             <View>
               <AppText weight="600" style={{ fontSize: 13, color: colors.ink60, marginBottom: 9, marginLeft: 2 }}>
                 {t('type')}
