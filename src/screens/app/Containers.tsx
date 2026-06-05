@@ -143,13 +143,8 @@ export function ContainerCard({ c, onPress }: { c: Container; onPress: () => voi
           ) : null}
         </View>
         {inspecting && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, width: 96 }}>
-            <AppText weight="600" style={{ fontSize: 11, color: meta.color }}>
-              {t.status(c.status)}
-            </AppText>
-            <View style={{ width: 50 }}>
-              <Progress value={pct} color={meta.color} height={5} />
-            </View>
+          <View style={{ width: 64 }}>
+            <Progress value={pct} color={meta.color} height={5} />
           </View>
         )}
       </View>
