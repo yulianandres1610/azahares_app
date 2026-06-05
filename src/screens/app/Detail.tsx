@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
 import { AppText, Button, Card, CheckMark, IconButton, Progress, Ring, Screen, Sheet, StatusBadge, Tap, Field, haptic } from '../../components/ui';
+import * as ImagePicker from 'expo-image-picker';
 import { CameraCapture } from '../../components/Camera';
 import { ThermalLabel } from '../../components/Label';
 import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../domain';
@@ -479,7 +480,6 @@ function RefuelPanel({
   reload: () => Promise<void>;
 }) {
   const { t, showToast } = useApp();
-  const [cam, setCam] = useState(false);
   const [vup, setVup] = useState<number | null>(null);
   const [sealTop, setSealTop] = useState(ins?.sealTop || '');
   const [sealBottom, setSealBottom] = useState(ins?.sealBottom || '');
@@ -499,11 +499,11 @@ function RefuelPanel({
     } catch {}
   };
 
-  const uploadVideo = async (uri: string) => {
+  const uploadVideo = async (uri: string, mime = 'video/mp4') => {
     if (!ins) return;
     setVup(0);
     try {
-      await Insp.uploadInspectionMedia(ins.id, 'refuel_video', uri, 'video/mp4', (pct) => setVup(pct));
+      await Insp.uploadInspectionMedia(ins.id, 'refuel_video', uri, mime, (pct) => setVup(pct));
       haptic('success');
       await reload();
     } catch (e: any) {
@@ -513,13 +513,31 @@ function RefuelPanel({
     }
   };
 
+  // Graba el video con la cámara nativa de iOS (confiable).
+  const recordVideo = async () => {
+    if (!editable) return;
+    const cam = await ImagePicker.requestCameraPermissionsAsync();
+    if (!cam.granted) {
+      showToast(t('camUnavailable'), 'warn');
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: 120,
+      quality: 1,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    uploadVideo(a.uri, a.mimeType || 'video/quicktime');
+  };
+
   return (
     <View style={{ gap: 16 }}>
       {/* video */}
       <View>
         <PanelLabel icon="video" text={t('refuelVideo')} req={t('required')} />
         {!hasVideo && vup == null && (
-          <Tap onPress={() => editable && setCam(true)} hapticKind={null} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Tap onPress={recordVideo} hapticKind={null} style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <View style={{ width: 52, height: 52, borderRadius: 999, backgroundColor: alpha(colors.error, 0.12), alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="video" size={26} color={colors.error} />
             </View>
@@ -622,19 +640,6 @@ function RefuelPanel({
             </AppText>
           )}
         </>
-      )}
-
-      {cam && (
-        <CameraCapture
-          mode="video"
-          title={t('refuelVideo')}
-          hint={t('refuelInspection')}
-          onClose={() => setCam(false)}
-          onCapture={(uri) => {
-            setCam(false);
-            uploadVideo(uri);
-          }}
-        />
       )}
     </View>
   );

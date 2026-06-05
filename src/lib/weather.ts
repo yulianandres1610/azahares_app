@@ -60,8 +60,26 @@ export function useWeather(nowLabel = 'Now') {
           if (mounted) setLoading(false);
           return;
         }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-        const { latitude, longitude } = pos.coords;
+        // Posición: última conocida (instantánea) o actual con timeout de 8s.
+        let coords: { latitude: number; longitude: number } | null = null;
+        try {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last) coords = last.coords;
+        } catch {}
+        if (!coords) {
+          try {
+            const cur = (await Promise.race([
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+            ])) as Location.LocationObject;
+            coords = cur.coords;
+          } catch {}
+        }
+        if (!coords) {
+          if (mounted) setLoading(false);
+          return;
+        }
+        const { latitude, longitude } = coords;
 
         const url =
           `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
