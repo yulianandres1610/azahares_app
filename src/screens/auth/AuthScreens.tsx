@@ -1,6 +1,8 @@
 // Pantallas de auth portadas de screens-auth.jsx con integración real.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, TextInput, View } from 'react-native';
+import { Animated, Dimensions, Easing, TextInput, View } from 'react-native';
+
+const LOGO_W = Dimensions.get('window').width - 28;
 import * as LocalAuthentication from 'expo-local-authentication';
 import { LinearGradient } from 'expo-linear-gradient';
 import { alpha, colors, fonts, radius } from '../../theme/tokens';
@@ -143,8 +145,8 @@ export function Login({ onForgot }: { onForgot: () => void }) {
       <AuthBackdrop />
       <Screen bg="transparent">
         <View style={{ paddingHorizontal: 24, flexGrow: 1, minHeight: 560 }}>
-          <FadeUp style={{ paddingTop: 56, alignItems: 'center' }}>
-            <Logo height={82} />
+          <FadeUp style={{ paddingTop: 48, alignItems: 'center', marginHorizontal: -24 }}>
+            <Logo width={LOGO_W} height={LOGO_W / 4.2} />
           </FadeUp>
 
           <FadeUp delay={120} style={{ marginTop: 40 }}>
@@ -206,10 +208,16 @@ export function Login({ onForgot }: { onForgot: () => void }) {
                   opacity: busy ? 0.7 : 1,
                 }}
               >
-                <AppText weight="600" style={{ color: '#fff', fontSize: 16, letterSpacing: 0.2 }}>
-                  {busy ? t('loading') : t('signIn')}
-                </AppText>
-                {!busy && <Icon name="arrowR" size={20} color="#fff" />}
+                {busy ? (
+                  <GlobeSpinner size={34} showHalo={false} />
+                ) : (
+                  <>
+                    <AppText weight="600" style={{ color: '#fff', fontSize: 16, letterSpacing: 0.2 }}>
+                      {t('signIn')}
+                    </AppText>
+                    <Icon name="arrowR" size={20} color="#fff" />
+                  </>
+                )}
               </View>
             </Tap>
           </FadeUp>
@@ -318,10 +326,16 @@ export function Forgot({ onBack }: { onBack: () => void }) {
                       borderColor: 'rgba(255,255,255,0.28)',
                     }}
                   >
-                    <AppText weight="600" style={{ color: '#fff', fontSize: 16 }}>
-                      {busy ? t('loading') : t('sendLink')}
-                    </AppText>
-                    {!busy && <Icon name="arrowR" size={20} color="#fff" />}
+                    {busy ? (
+                      <GlobeSpinner size={32} showHalo={false} />
+                    ) : (
+                      <>
+                        <AppText weight="600" style={{ color: '#fff', fontSize: 16 }}>
+                          {t('sendLink')}
+                        </AppText>
+                        <Icon name="arrowR" size={20} color="#fff" />
+                      </>
+                    )}
                   </View>
                 </Tap>
               </FadeUp>
@@ -590,7 +604,7 @@ export function OTP() {
 
           <FadeUp delay={170} style={{ marginTop: 24 }}>
             <Button onPress={verify} disabled={busy || full.length < 6} variant="accent">
-              {busy ? t('loading') : t('verify')}
+              {busy ? <GlobeSpinner size={32} showHalo={false} /> : t('verify')}
             </Button>
           </FadeUp>
         </View>

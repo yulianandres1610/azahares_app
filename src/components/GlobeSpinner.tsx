@@ -5,7 +5,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native
 import { alpha, colors } from '../theme/tokens';
 import { GLOBE } from './AuthBackdrop';
 
-export function GlobeSpinner({ size = 168 }: { size?: number }) {
+export function GlobeSpinner({ size = 168, showHalo = true }: { size?: number; showHalo?: boolean }) {
   const globe = Math.round(size * 0.64);
   const ring = Math.round(size * 0.94);
   const spin = useRef(new Animated.Value(0)).current;
@@ -41,17 +41,19 @@ export function GlobeSpinner({ size = 168 }: { size?: number }) {
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       {/* halo */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          width: size * 0.78,
-          height: size * 0.78,
-          borderRadius: 999,
-          backgroundColor: alpha(colors.accent, 0.5),
-          opacity: haloOpacity,
-          transform: [{ scale: haloScale }],
-        }}
-      />
+      {showHalo && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            width: size * 0.78,
+            height: size * 0.78,
+            borderRadius: 999,
+            backgroundColor: alpha(colors.accent, 0.5),
+            opacity: haloOpacity,
+            transform: [{ scale: haloScale }],
+          }}
+        />
+      )}
       {/* anillo de profundidad estático */}
       <View style={{ position: 'absolute', width: ring, height: ring, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }} />
       {/* anillo cometa rotando */}

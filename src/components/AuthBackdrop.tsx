@@ -44,12 +44,12 @@ export function AuthBackdrop() {
 }
 
 // Logo horizontal blanco (tintado a blanco vía tintColor).
-export function Logo({ height = 30, style }: { height?: number; style?: any }) {
+export function Logo({ height = 30, width, style }: { height?: number; width?: number; style?: any }) {
   return (
     <Image
       source={LOGO}
       resizeMode="contain"
-      style={[{ height, width: height * 4.2, tintColor: '#ffffff' }, style]}
+      style={[{ height, width: width ?? height * 4.2, tintColor: '#ffffff' }, style]}
     />
   );
 }
