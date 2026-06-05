@@ -1,6 +1,6 @@
 // Shell autenticado: tab bar con FAB central + host de overlays.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, View } from 'react-native';
+import { Animated, Dimensions, Pressable, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,15 +57,15 @@ function TabBar({ tab, setTab, onScan, t }: { tab: TabId; setTab: (t: TabId) => 
     <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom || 0 }}>
       <View style={{ marginHorizontal: 12, marginBottom: 8, borderRadius: 26, height: 64, overflow: 'visible', ...shadows.card }}>
         <BlurView intensity={40} tint="light" style={{ flex: 1, borderRadius: 26, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.72)' }}>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'stretch' }}>
             <View style={{ flex: 1, flexDirection: 'row' }}>
-              <Tab id="home" icon="home" label={t('home')} active={tab === 'home'} onPress={() => go('home')} />
-              <Tab id="containers" icon="layers" label={t('containers')} active={tab === 'containers'} onPress={() => go('containers')} />
+              <Tab icon="home" label={t('home')} active={tab === 'home'} onPress={() => go('home')} />
+              <Tab icon="layers" label={t('containers')} active={tab === 'containers'} onPress={() => go('containers')} />
             </View>
             <View style={{ width: 76 }} />
             <View style={{ flex: 1, flexDirection: 'row' }}>
-              <Tab id="inspections" icon="inspect" label={t('inspections')} active={tab === 'inspections'} onPress={() => go('inspections')} />
-              <Tab id="profile" icon="user" label={t('profile')} active={tab === 'profile'} onPress={() => go('profile')} />
+              <Tab icon="inspect" label={t('inspections')} active={tab === 'inspections'} onPress={() => go('inspections')} />
+              <Tab icon="user" label={t('profile')} active={tab === 'profile'} onPress={() => go('profile')} />
             </View>
           </View>
         </BlurView>
@@ -91,17 +91,23 @@ function TabBar({ tab, setTab, onScan, t }: { tab: TabId; setTab: (t: TabId) => 
   );
 }
 
-function Tab({ icon, label, active, onPress }: { id: TabId; icon: IconName; label: string; active: boolean; onPress: () => void }) {
+function Tab({ icon, label, active, onPress }: { icon: IconName; label: string; active: boolean; onPress: () => void }) {
   return (
-    <Tap onPress={onPress} hapticKind={null} style={{ flex: 1, alignItems: 'center', gap: 4, paddingVertical: 7 }}>
-      <View style={{ alignItems: 'center' }}>
-        <Icon name={icon} size={27} color={active ? colors.navy700 : colors.ink40} strokeWidth={active ? 2.3 : 1.85} />
-        {active && <View style={{ position: 'absolute', bottom: -6, width: 5, height: 5, borderRadius: 999, backgroundColor: colors.accent }} />}
+    <Pressable
+      onPress={() => {
+        haptic('select');
+        onPress();
+      }}
+      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 4 }}
+    >
+      <Icon name={icon} size={25} color={active ? colors.navy700 : colors.ink40} strokeWidth={active ? 2.3 : 1.85} />
+      <View style={{ height: 6, justifyContent: 'center', marginVertical: 1 }}>
+        {active ? <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: colors.accent }} /> : null}
       </View>
-      <AppText weight={active ? '700' : '500'} style={{ fontSize: 10.5, color: active ? colors.navy700 : colors.ink40 }}>
+      <AppText weight={active ? '700' : '500'} style={{ fontSize: 10.5, lineHeight: 13, color: active ? colors.navy700 : colors.ink40 }}>
         {label}
       </AppText>
-    </Tap>
+    </Pressable>
   );
 }
 
