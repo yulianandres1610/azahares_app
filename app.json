@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.azaharesfuel.app",
+      "bundleIdentifier": "com.azaharesfuel",
       "infoPlist": {
         "NSCameraUsageDescription": "Azahares usa la cámara para fotografiar contenedores y grabar el video de inspección de refuel.",
         "NSMicrophoneUsageDescription": "Azahares usa el micrófono al grabar el video de inspección del tanque.",
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "com.azaharesfuel.app",
+      "package": "com.azaharesfuel",
       "adaptiveIcon": {
         "backgroundColor": "#0d1b3d",
         "foregroundImage": "./assets/android-icon-foreground.png",
