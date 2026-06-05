@@ -10,7 +10,7 @@ import { ToastHost } from './src/components/ui';
 import { Splash, Login, Forgot, OTP, Biometric, Pending } from './src/screens/auth/AuthScreens';
 import { MainShell } from './src/screens/app/MainShell';
 
-type AuthSub = 'login' | 'forgot' | 'biometric';
+type AuthSub = 'login' | 'forgot';
 
 function Root() {
   const { phase, toast, signOut, unlock, configOk, showToast, t } = useApp();
@@ -39,9 +39,7 @@ function Root() {
     content = <Splash />;
   } else if (phase === 'unauth') {
     if (sub === 'forgot') content = <Forgot onBack={() => setSub('login')} />;
-    else if (sub === 'biometric')
-      content = <Biometric onCancel={() => setSub('login')} onSuccess={async () => unlock()} />;
-    else content = <Login onForgot={() => setSub('forgot')} onBiometric={() => setSub('biometric')} />;
+    else content = <Login onForgot={() => setSub('forgot')} />;
   } else if (phase === 'locked') {
     content = <Biometric onCancel={() => signOut()} onSuccess={async () => unlock()} />;
   } else if (phase === 'otp') {

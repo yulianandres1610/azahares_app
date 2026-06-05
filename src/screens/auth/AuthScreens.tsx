@@ -113,8 +113,8 @@ export function Splash() {
 }
 
 // ── Login ────────────────────────────────────────────────────
-export function Login({ onForgot, onBiometric }: { onForgot: () => void; onBiometric: () => void }) {
-  const { t, signIn, biometricEnabled, biometricType, showToast } = useApp();
+export function Login({ onForgot }: { onForgot: () => void }) {
+  const { t, signIn, showToast } = useApp();
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -213,36 +213,6 @@ export function Login({ onForgot, onBiometric }: { onForgot: () => void; onBiome
               </View>
             </Tap>
           </FadeUp>
-
-          {biometricEnabled && (
-            <FadeUp delay={240} style={{ marginTop: 22 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.16)' }} />
-                <AppText style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>{t('or')}</AppText>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.16)' }} />
-              </View>
-              <Tap onPress={onBiometric} hapticKind="medium">
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 10,
-                    height: 54,
-                    borderRadius: radius.md,
-                    borderWidth: 1.5,
-                    borderColor: 'rgba(255,255,255,0.22)',
-                    backgroundColor: 'rgba(255,255,255,0.06)',
-                  }}
-                >
-                  <Icon name={biometricType === 'fingerprint' ? 'fingerprint' : 'faceid'} size={22} color="#fff" />
-                  <AppText weight="600" style={{ color: '#fff', fontSize: 15 }}>
-                    {biometricType === 'fingerprint' ? t('useFingerprint') : t('useBiometric')}
-                  </AppText>
-                </View>
-              </Tap>
-            </FadeUp>
-          )}
 
           <View style={{ flex: 1 }} />
           <Footer />
@@ -714,11 +684,13 @@ export function Biometric({ onCancel, onSuccess }: { onCancel: () => void; onSuc
         <AppText style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14.5, marginTop: 10, textAlign: 'center', maxWidth: 260 }}>
           {subtitle}
         </AppText>
-        <Tap onPress={onCancel} style={{ position: 'absolute', bottom: 56 }}>
-          <AppText weight="600" style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14.5 }}>
-            {t('bioCancel')}
-          </AppText>
-        </Tap>
+        <View style={{ position: 'absolute', bottom: 56, left: 0, right: 0, alignItems: 'center' }}>
+          <Tap onPress={onCancel}>
+            <AppText weight="600" style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14.5 }}>
+              {t('bioCancel')}
+            </AppText>
+          </Tap>
+        </View>
       </View>
     </View>
   );

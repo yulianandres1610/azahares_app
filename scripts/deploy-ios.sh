@@ -9,15 +9,16 @@ set -eo pipefail
 cd "$(dirname "$0")/.."
 
 UDID="${1:-00008150-000A422A0ADA401C}"
+CONFIG="${CONFIG:-Debug}"
 SIGN_ID="${AZ_SIGN_ID:-Apple Development: Yulian Andres Diaz Garcia (FR3RP4VKXV)}"
 SCHEME="Azahares"
 WS="ios/Azahares.xcworkspace"
 
-echo ">> Compilando ($SCHEME, Debug) para $UDID"
-xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Debug \
+echo ">> Compilando ($SCHEME, $CONFIG) para $UDID"
+xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration "$CONFIG" \
   -destination "id=$UDID" -allowProvisioningUpdates build | tail -3
 
-APP=$(ls -dt ~/Library/Developer/Xcode/DerivedData/Azahares-*/Build/Products/Debug-iphoneos/Azahares.app 2>/dev/null | head -1)
+APP=$(ls -dt ~/Library/Developer/Xcode/DerivedData/Azahares-*/Build/Products/$CONFIG-iphoneos/Azahares.app 2>/dev/null | head -1)
 if [ -z "$APP" ]; then echo "ERROR: no se encontro la .app"; exit 1; fi
 echo ">> App: $APP"
 

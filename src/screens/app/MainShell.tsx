@@ -70,16 +70,19 @@ function TabBar({ tab, setTab, onScan, t }: { tab: TabId; setTab: (t: TabId) => 
           </View>
         </BlurView>
 
-        {/* FAB central */}
-        <View style={{ position: 'absolute', left: '50%', top: -26, marginLeft: -29, alignItems: 'center' }}>
+        {/* FAB central elevado */}
+        <View style={{ position: 'absolute', left: '50%', marginLeft: -29, top: -26 }}>
           <Tap onPress={onScan} hapticKind="medium" scaleTo={0.9}>
             <View style={{ width: 58, height: 58, borderRadius: 20, borderWidth: 4, borderColor: colors.bg, overflow: 'hidden', ...shadows.card }}>
-              <LinearGradient colors={gradients.navy} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <LinearGradient colors={gradients.navy} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="qr" size={26} color="#fff" />
               </LinearGradient>
             </View>
           </Tap>
-          <AppText weight="700" style={{ color: colors.navy700, fontSize: 10.5, marginTop: 3 }}>
+        </View>
+        {/* etiqueta Scan alineada al fondo del bar con las demás */}
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 9, alignItems: 'center' }} pointerEvents="none">
+          <AppText weight="700" style={{ color: colors.navy700, fontSize: 10.5 }}>
             {t('scan')}
           </AppText>
         </View>
