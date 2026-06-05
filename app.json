@@ -37,6 +37,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withIosBuildFixes",
       "expo-secure-store",
       "expo-font",
       "expo-localization",
