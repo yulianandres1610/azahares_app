@@ -10,6 +10,7 @@ import { AppText, Avatar, CheckMark, Field, IconButton, Screen, Sheet, Tap, hapt
 import { deviceLocale } from '../../i18n';
 import { useApp } from '../../store/AppContext';
 import { updateMe, uploadAvatar, deleteAvatar } from '../../lib/api/me';
+import { supabase } from '../../lib/supabase';
 
 const GLOBE = require('../../../assets/logo/logo-globe.png');
 
@@ -19,6 +20,7 @@ export function Profile() {
   const [editOpen, setEditOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [avatarSheet, setAvatarSheet] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const langLabel = { auto: 'Auto', en: 'English', es: 'Español' }[localePref];
 
@@ -110,7 +112,7 @@ export function Profile() {
       {/* security */}
       <Section title={t('security')}>
         <Row icon="faceid" label={t('biometricUnlock')} right={<Switch on={biometricEnabled} onChange={(v) => { haptic('select'); setBiometricEnabled(v); }} />} />
-        <Row icon="lock" label={t('changePassword')} chevron onPress={() => showToast(t('changePassword'), 'info')} last />
+        <Row icon="lock" label={t('changePassword')} chevron onPress={() => setPwOpen(true)} last />
       </Section>
 
       {/* account */}
@@ -173,6 +175,9 @@ export function Profile() {
 
       {/* edit sheet */}
       <EditSheet open={editOpen} onClose={() => setEditOpen(false)} />
+
+      {/* change password sheet */}
+      <PasswordSheet open={pwOpen} onClose={() => setPwOpen(false)} />
 
       {/* avatar sheet */}
       <Sheet open={avatarSheet} onClose={() => setAvatarSheet(false)} title={t('editProfile')}>
@@ -362,6 +367,165 @@ function EditSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           </View>
         </Pressable>
       </Modal>
+    </Sheet>
+  );
+}
+
+// ── Campo de contraseña con mostrar/ocultar ──────────────────
+function PwField({
+  label,
+  value,
+  onChangeText,
+  error,
+  autoFocus,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  error?: boolean;
+  autoFocus?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <Field
+      label={label}
+      icon="lock"
+      value={value}
+      onChangeText={onChangeText}
+      secureTextEntry={!show}
+      invalid={error}
+      autoFocus={autoFocus}
+      placeholder="••••••••"
+      right={
+        <Tap onPress={() => setShow((v) => !v)} style={{ padding: 8 }} hapticKind={null}>
+          <Icon name={show ? 'eyeOff' : 'eye'} size={19} color={colors.ink40} />
+        </Tap>
+      }
+    />
+  );
+}
+
+function scorePw(pw: string): number {
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (/[A-Z]/.test(pw)) s++;
+  if (/[0-9]/.test(pw)) s++;
+  if (/[^A-Za-z0-9]/.test(pw) || pw.length >= 12) s++;
+  return s; // 0..4
+}
+
+function PasswordSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t, me, showToast } = useApp();
+  const [cur, setCur] = useState('');
+  const [pw, setPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [curErr, setCurErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setCur('');
+      setPw('');
+      setConfirm('');
+      setCurErr(false);
+    }
+  }, [open]);
+
+  const reqs = [
+    { key: 'pwReq8', ok: pw.length >= 8 },
+    { key: 'pwReqUpper', ok: /[A-Z]/.test(pw) },
+    { key: 'pwReqNum', ok: /[0-9]/.test(pw) },
+    { key: 'pwReqMatch', ok: pw.length > 0 && pw === confirm },
+  ];
+  const score = scorePw(pw);
+  const allOk = reqs.every((r) => r.ok) && cur.length > 0;
+  const mismatch = confirm.length > 0 && confirm !== pw;
+  const strengthLabel = [t('pwWeak'), t('pwWeak'), t('pwFair'), t('pwGood'), t('pwStrong')][score];
+  const strengthColor = [colors.error, colors.error, colors.amber, colors.accent, colors.success][score];
+
+  const submit = async () => {
+    if (!allOk || busy) return;
+    setBusy(true);
+    try {
+      // 1) verificar la contraseña actual reautenticando
+      const { error: signErr } = await supabase.auth.signInWithPassword({ email: me?.email || '', password: cur });
+      if (signErr) {
+        setCurErr(true);
+        haptic('warn');
+        showToast(t('wrongCurrent'), 'error');
+        setBusy(false);
+        return;
+      }
+      // 2) actualizar la contraseña
+      const { error: updErr } = await supabase.auth.updateUser({ password: pw });
+      if (updErr) throw new Error(updErr.message);
+      haptic('success');
+      onClose();
+      showToast(t('pwUpdated'), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title={t('changePassword')}>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 16 }}>
+        <PwField label={t('currentPassword')} value={cur} onChangeText={(v) => { setCur(v); setCurErr(false); }} error={curErr} autoFocus />
+        <View style={{ height: 1, backgroundColor: colors.line, marginHorizontal: -16 }} />
+        <PwField label={t('newPassword')} value={pw} onChangeText={setPw} />
+
+        {pw.length > 0 && (
+          <View style={{ marginTop: -4 }}>
+            <View style={{ flexDirection: 'row', gap: 5, marginBottom: 7 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <View key={i} style={{ flex: 1, height: 5, borderRadius: 999, backgroundColor: i < score ? strengthColor : colors.line }} />
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <AppText weight="500" style={{ fontSize: 12, color: colors.ink50 }}>
+                {t('pwStrength')}
+              </AppText>
+              <AppText weight="700" style={{ fontSize: 12, color: strengthColor }}>
+                {strengthLabel}
+              </AppText>
+            </View>
+          </View>
+        )}
+
+        <PwField label={t('confirmPassword')} value={confirm} onChangeText={setConfirm} error={mismatch} />
+        {mismatch && (
+          <AppText weight="600" style={{ fontSize: 12.5, color: colors.error, marginTop: -8, marginLeft: 2 }}>
+            {t('pwMismatch')}
+          </AppText>
+        )}
+
+        {/* checklist de requisitos */}
+        <View style={{ backgroundColor: colors.bg, borderRadius: 14, padding: 12, gap: 9 }}>
+          {reqs.map((r) => (
+            <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <View style={{ width: 18, height: 18, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: r.ok ? colors.success : colors.line }}>
+                {r.ok ? <CheckMark size={11} /> : <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: colors.ink30 }} />}
+              </View>
+              <AppText weight="500" style={{ fontSize: 13, color: r.ok ? colors.ink : colors.ink50 }}>
+                {t(r.key)}
+              </AppText>
+            </View>
+          ))}
+        </View>
+
+        <Tap onPress={submit} hapticKind="medium" disabled={!allOk || busy} style={{ opacity: !allOk || busy ? 0.5 : 1 }}>
+          <View style={{ height: 54, borderRadius: radius.md, overflow: 'hidden' }}>
+            <LinearGradient colors={gradients.navy} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+              <Icon name="lock" size={20} color="#fff" />
+              <AppText weight="600" style={{ color: '#fff', fontSize: 16 }}>
+                {busy ? t('loading') : t('updatePassword')}
+              </AppText>
+            </LinearGradient>
+          </View>
+        </Tap>
+      </View>
     </Sheet>
   );
 }

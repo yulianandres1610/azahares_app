@@ -41,7 +41,7 @@ function Floating({ children, style }: { children: React.ReactNode; style?: any 
 }
 
 export function Home() {
-  const { t, me, containers } = useApp();
+  const { t, me, containers, notifications } = useApp();
   const nav = useNav();
   const c = counts(containers);
   const [anim, setAnim] = useState(false);
@@ -77,7 +77,12 @@ export function Home() {
             {t('hello')}, {firstName} 👋
           </AppText>
         </View>
-        <IconButton name="bell" variant="surface" />
+        <View>
+          <IconButton name="bell" variant="surface" onPress={() => nav.openOverlay({ type: 'notifications' })} />
+          {notifications.some((n) => !n.read) && (
+            <View style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, borderRadius: 999, backgroundColor: colors.error, borderWidth: 2, borderColor: colors.surface }} />
+          )}
+        </View>
         <Tap onPress={() => nav.setTab('profile')}>
           <Avatar name={me?.fullName} src={me?.avatarUrl} size={42} />
         </Tap>

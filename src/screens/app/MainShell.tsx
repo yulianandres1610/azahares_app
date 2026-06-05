@@ -16,6 +16,7 @@ import { Profile } from './Profile';
 import { NewContainer } from './NewContainer';
 import { Detail } from './Detail';
 import { Scan } from './Scan';
+import { Notifications } from './Notifications';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -191,6 +192,7 @@ function OverlayHost({ overlay, onClose }: { overlay: Overlay; onClose: () => vo
       {shown.type === 'new' && <NewContainer onClose={onClose} />}
       {shown.type === 'detail' && <Detail id={shown.id} onClose={onClose} />}
       {shown.type === 'scan' && <Scan onClose={onClose} />}
+      {shown.type === 'notifications' && <Notifications onClose={onClose} />}
     </Animated.View>
   );
 }
