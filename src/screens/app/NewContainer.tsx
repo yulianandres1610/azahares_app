@@ -38,9 +38,9 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
 
   const pickType = (ty: string) => {
     haptic('select');
-    setD((p) => ({ ...p, type: ty, unit: ty === 'fuel' ? (p.unit === 'gal' ? 'gal' : 'L') : ['m³', 'kg'].includes(p.unit) ? p.unit : 'm³' }));
+    setD((p) => ({ ...p, type: ty, unit: ty === 'fuel' ? (p.unit === 'gal' ? 'gal' : 'L') : 'm³' }));
   };
-  const unitOptions = d.type === 'fuel' ? ['L', 'gal'] : ['m³', 'kg'];
+  const unitOptions = d.type === 'fuel' ? ['L', 'gal'] : ['m³'];
   const photoCount = d.photos.filter(Boolean).length;
   const SIDES = [t('sideFront'), t('sideRight'), t('sideBack'), t('sideLeft')];
   const steps = [t('identity'), t('spec'), t('ownerShort'), t('review')];
@@ -69,7 +69,6 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
         tareUnit: d.tareUnit,
         ownership: d.ownership,
         price: d.price ? Number(d.price) : null,
-        currency: d.currency,
       });
       // subir las 4 fotos de registro
       for (const uri of d.photos) {

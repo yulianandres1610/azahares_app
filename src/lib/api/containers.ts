@@ -1,40 +1,88 @@
-// Endpoints de contenedores.
+// Endpoints de contenedores + mapeo entre el shape del backend y el de la UI.
 import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch } from './client';
 import { getAccessToken } from '../supabase';
 import { API_URL } from '../../config';
 import type { Container } from './types';
 
-export function listContainers(): Promise<Container[]> {
-  return apiFetch<Container[]>('/containers');
+// ── Mapeo backend → UI ───────────────────────────────────────
+const UNIT_SHORT: Record<string, string> = { liters: 'L', gallons: 'gal', cubic_meters: 'm³' };
+const UNIT_LONG: Record<string, string> = { L: 'liters', gal: 'gallons', 'm³': 'cubic_meters' };
+const TYPE_TO_UI: Record<string, string> = { refrigerated: 'reefer', fuel: 'fuel', dry: 'dry' };
+const TYPE_TO_API: Record<string, string> = { reefer: 'refrigerated', fuel: 'fuel', dry: 'dry' };
+
+function mapContainer(raw: any): Container {
+  return {
+    id: raw.id,
+    number: raw.containerNumber ?? raw.number ?? '',
+    type: TYPE_TO_UI[raw.type] ?? raw.type,
+    size: raw.size ?? null,
+    capacity: raw.capacityValue != null ? Number(raw.capacityValue) : raw.capacity ?? null,
+    unit: UNIT_SHORT[raw.capacityUnit] ?? raw.capacityUnit ?? raw.unit ?? null,
+    tare: raw.tareWeightKg != null ? Number(raw.tareWeightKg) : raw.tare ?? null,
+    tareUnit: raw.tareWeightUnit ?? raw.tareUnit ?? 'kg',
+    ownership: raw.ownership ?? null,
+    price: raw.price ?? null,
+    currency: raw.currency ?? 'USD',
+    status: raw.status,
+    cycle: raw.cycle ?? null,
+    updatedAt: raw.updatedAt ?? raw.createdAt ?? null,
+    photoUrl: raw.photoUrl ?? null,
+  };
 }
 
-export function getContainer(id: string): Promise<Container> {
-  return apiFetch<Container>(`/containers/${id}`);
+export async function listContainers(): Promise<Container[]> {
+  const rows = await apiFetch<any[]>('/containers');
+  return Array.isArray(rows) ? rows.map(mapContainer) : [];
 }
 
-export interface CreateContainerDto {
+export async function getContainer(id: string): Promise<Container> {
+  const raw = await apiFetch<any>(`/containers/${id}`);
+  return mapContainer(raw);
+}
+
+// Input de la UI (wizard) — campos amigables.
+export interface NewContainerInput {
   number: string;
-  type: string;
-  size?: string;
-  capacity?: number;
-  unit?: string;
-  tare?: number;
-  tareUnit?: string;
-  ownership?: string;
-  price?: number | null;
-  currency?: string;
+  type: string; // fuel | dry | reefer
+  size: string;
+  capacity: number;
+  unit: string; // L | gal | m³
+  tare: number;
+  tareUnit: string; // kg | lb
+  ownership: string; // owned | rented
+  price: number | null;
 }
 
-export function createContainer(dto: CreateContainerDto): Promise<Container> {
-  return apiFetch<Container>('/containers', { method: 'POST', body: dto });
+export async function createContainer(input: NewContainerInput): Promise<Container> {
+  const apiType = TYPE_TO_API[input.type] ?? input.type;
+  // unidad de capacidad: combustible L/gal; seco/refrigerado siempre m³
+  const capacityUnit = apiType === 'fuel' ? UNIT_LONG[input.unit] ?? 'liters' : 'cubic_meters';
+  const body: any = {
+    containerNumber: input.number,
+    type: apiType,
+    size: input.size,
+    capacityValue: input.capacity,
+    capacityUnit,
+    tareWeightKg: input.tare,
+    tareWeightUnit: input.tareUnit,
+    ownership: input.ownership,
+  };
+  const price = input.price ?? 0;
+  if (input.ownership === 'rented') {
+    body.rent = { cost: price, period: 'monthly' };
+  } else {
+    body.owned = {
+      purchaseCost: price,
+      purchasedAt: new Date().toISOString().slice(0, 10),
+      annualDepreciationPct: 0,
+    };
+  }
+  const raw = await apiFetch<any>('/containers', { method: 'POST', body });
+  return mapContainer(raw);
 }
 
-export function updateContainer(id: string, patch: Partial<CreateContainerDto> & { status?: string }): Promise<Container> {
-  return apiFetch<Container>(`/containers/${id}`, { method: 'PATCH', body: patch });
-}
-
-// Subida de imagen de contenedor (2 pasos: signed URL + PUT + registrar).
+// Subida de imagen de contenedor (2 pasos).
 export async function uploadContainerImage(
   containerId: string,
   fileUri: string,
@@ -50,12 +98,7 @@ export async function uploadContainerImage(
   const info = await FileSystem.getInfoAsync(fileUri);
   await apiFetch(`/containers/${containerId}/images`, {
     method: 'POST',
-    body: {
-      storagePath: path,
-      fileName,
-      mimeType,
-      sizeBytes: (info as any).size ?? undefined,
-    },
+    body: { storagePath: path, fileName, mimeType, sizeBytes: (info as any).size ?? undefined },
   });
 }
 
@@ -70,11 +113,7 @@ export async function putSigned(
   const task = FileSystem.createUploadTask(
     uploadUrl,
     fileUri,
-    {
-      httpMethod: 'PUT',
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers,
-    },
+    { httpMethod: 'PUT', uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT, headers },
     (data) => {
       if (onProgress && data.totalBytesExpectedToSend > 0) {
         onProgress(Math.round((data.totalBytesSent / data.totalBytesExpectedToSend) * 100));
