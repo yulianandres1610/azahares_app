@@ -9,7 +9,7 @@ import { GlobeSpinner } from '../../components/GlobeSpinner';
 import { Icon, IconName } from '../../components/Icon';
 import { AppText, Button, Screen, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { otpChallenge, otpVerifyLogin } from '../../lib/api/me';
+import { otpChallenge, otpSettings, otpVerifyLogin } from '../../lib/api/me';
 import { supabase } from '../../lib/supabase';
 
 // ── GlassField ───────────────────────────────────────────────
@@ -396,19 +396,55 @@ export function Forgot({ onBack }: { onBack: () => void }) {
 export function OTP() {
   const { t, onOtpVerified, showToast, me } = useApp();
   const [code, setCode] = useState<string[]>(['', '', '', '', '', '']);
-  const [count, setCount] = useState(28);
+  const [count, setCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [hasTotp, setHasTotp] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const refs = useRef<(TextInput | null)[]>([]);
+  const es = t.locale === 'es';
 
+  // cooldown del reenvío de email
   useEffect(() => {
+    if (count <= 0) return;
     const i = setInterval(() => setCount((c) => (c > 0 ? c - 1 : 0)), 1000);
     return () => clearInterval(i);
-  }, []);
+  }, [count]);
+
+  const sendEmail = async () => {
+    if (sending || count > 0) return;
+    setSending(true);
+    haptic('light');
+    try {
+      const r = await otpChallenge('email', 'login_2fa');
+      setSentTo(r.sentTo);
+      setCount(30);
+      showToast(`${t('sentSub')} ${r.sentTo}`, 'success');
+    } catch (e: any) {
+      haptic('warn');
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Al montar: leer métodos. Si NO hay Authenticator, mandar email automático.
   useEffect(() => {
-    // pide el código al backend al montar
-    otpChallenge().catch(() => {});
+    let mounted = true;
+    otpSettings()
+      .then((s) => {
+        if (!mounted) return;
+        const totp = !!(s.methods?.includes('totp') && s.totpVerified);
+        setHasTotp(totp);
+        if (!totp) sendEmail();
+      })
+      .catch(() => {});
     const tm = setTimeout(() => refs.current[0]?.focus(), 400);
-    return () => clearTimeout(tm);
+    return () => {
+      mounted = false;
+      clearTimeout(tm);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const full = code.join('');
@@ -455,13 +491,16 @@ export function OTP() {
     }
   };
 
-  const resend = async () => {
-    setCount(28);
-    haptic('light');
-    try {
-      await otpChallenge();
-    } catch {}
-  };
+  const emailLabel =
+    count > 0
+      ? `${t('resendIn')} 0:${String(count).padStart(2, '0')}`
+      : sentTo
+      ? es
+        ? 'Reenviar código al email'
+        : 'Resend code to email'
+      : es
+      ? 'Enviar código a mi email'
+      : 'Send code to my email';
 
   return (
     <View style={{ flex: 1 }}>
@@ -486,14 +525,70 @@ export function OTP() {
               {t('otpTitle')}
             </AppText>
             <AppText style={{ color: 'rgba(255,255,255,0.62)', fontSize: 15, marginTop: 10, lineHeight: 22 }}>
-              {t('otpSub')}{'\n'}
+              {sentTo
+                ? `${t('sentSub')} `
+                : `${t('otpSub')} `}
               <AppText weight="600" style={{ color: '#fff', fontSize: 15 }}>
-                {me?.email || ''}
+                {sentTo || me?.email || ''}
               </AppText>
             </AppText>
           </FadeUp>
 
-          <FadeUp delay={100} style={{ flexDirection: 'row', gap: 10, marginTop: 34 }}>
+          {/* método: Authenticator (si está) */}
+          {hasTotp && (
+            <FadeUp delay={60} style={{ marginTop: 18 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 11,
+                  padding: 13,
+                  borderRadius: radius.md,
+                  backgroundColor: 'rgba(255,255,255,0.07)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.16)',
+                }}
+              >
+                <Icon name="lock" size={20} color={colors.accent} />
+                <View style={{ flex: 1 }}>
+                  <AppText weight="700" style={{ color: '#fff', fontSize: 13 }}>
+                    Authenticator
+                  </AppText>
+                  <AppText style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 1 }}>
+                    {es ? 'Abrí tu app y copiá el código actual.' : 'Open your app and copy the current code.'}
+                  </AppText>
+                </View>
+              </View>
+            </FadeUp>
+          )}
+
+          {/* botón enviar/reenviar email */}
+          <FadeUp delay={90} style={{ marginTop: 12 }}>
+            <Tap onPress={sendEmail} disabled={sending || count > 0} hapticKind={null}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  height: 46,
+                  borderRadius: radius.md,
+                  borderWidth: 1.5,
+                  borderColor: 'rgba(255,255,255,0.22)',
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  opacity: sending || count > 0 ? 0.6 : 1,
+                }}
+              >
+                <Icon name="mail" size={18} color="#fff" />
+                <AppText weight="600" style={{ color: '#fff', fontSize: 14 }}>
+                  {sending ? t('loading') : emailLabel}
+                </AppText>
+              </View>
+            </Tap>
+          </FadeUp>
+
+          {/* inputs */}
+          <FadeUp delay={130} style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
             {code.map((d, i) => (
               <TextInput
                 key={i}
@@ -523,28 +618,11 @@ export function OTP() {
             ))}
           </FadeUp>
 
-          <FadeUp delay={160} style={{ marginTop: 30 }}>
+          <FadeUp delay={170} style={{ marginTop: 24 }}>
             <Button onPress={verify} disabled={busy || full.length < 6} variant="accent">
               {busy ? t('loading') : t('verify')}
             </Button>
           </FadeUp>
-
-          <View style={{ alignItems: 'center', marginTop: 22 }}>
-            {count > 0 ? (
-              <AppText style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14 }}>
-                {t('resendIn')}{' '}
-                <AppText weight="700" style={{ color: '#fff', fontSize: 14 }}>
-                  0:{String(count).padStart(2, '0')}
-                </AppText>
-              </AppText>
-            ) : (
-              <Tap onPress={resend}>
-                <AppText weight="600" style={{ color: colors.accent, fontSize: 14 }}>
-                  {t('resend')}
-                </AppText>
-              </Tap>
-            )}
-          </View>
         </View>
       </Screen>
     </View>

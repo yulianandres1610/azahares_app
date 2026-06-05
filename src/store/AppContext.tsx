@@ -167,7 +167,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch {
         try {
           const s = await otpSettings();
-          needsOtp = !!(s.required || s.enforced);
+          needsOtp = !!s.enabled;
         } catch {}
       }
       if (needsOtp) {

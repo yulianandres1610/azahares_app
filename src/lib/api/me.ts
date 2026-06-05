@@ -28,12 +28,27 @@ export function otpLoginSuccess(): Promise<unknown> {
   return apiFetch('/otp/login-success', { method: 'POST' });
 }
 
-export function otpSettings(): Promise<{ required?: boolean; enforced?: boolean; enabled?: boolean }> {
-  return apiFetch('/otp/settings');
+export interface OtpSettings {
+  enabled: boolean;
+  methods: string[]; // ['totp','email','sms']
+  otpEmail: string | null;
+  otpPhone: string | null;
+  totpVerified: boolean;
+  defaultEmail: string | null;
+  backupCodesRemaining: number;
 }
 
-export function otpChallenge(): Promise<unknown> {
-  return apiFetch('/otp/challenge', { method: 'POST' });
+export function otpSettings(): Promise<OtpSettings> {
+  return apiFetch<OtpSettings>('/otp/settings');
+}
+
+// Envía un código por email/sms. Para el login la acción es 'login_2fa'
+// (debe coincidir con lo que valida verify-login en el backend).
+export function otpChallenge(
+  channel: 'email' | 'sms' = 'email',
+  action = 'login_2fa',
+): Promise<{ ok: true; channel: string; sentTo: string }> {
+  return apiFetch('/otp/challenge', { method: 'POST', body: { channel, action } });
 }
 
 export function otpVerifyLogin(token: string): Promise<unknown> {
