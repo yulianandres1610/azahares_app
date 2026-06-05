@@ -41,6 +41,10 @@ export async function getContainer(id: string): Promise<Container> {
   return mapContainer(raw);
 }
 
+export function deleteContainer(id: string): Promise<unknown> {
+  return apiFetch(`/containers/${id}`, { method: 'DELETE' });
+}
+
 // Input de la UI (wizard) — campos amigables.
 export interface NewContainerInput {
   number: string;

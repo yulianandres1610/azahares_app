@@ -14,6 +14,7 @@ import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../doma
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
+import { deleteContainer } from '../../lib/api/containers';
 import type { Container, ContainerInspection, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
 
 export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
@@ -25,6 +26,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const [view, setView] = useState(0);
   const [histOpen, setHistOpen] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const active = c ? stepOf(c) : 0;
 
@@ -212,8 +214,13 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
           <AppText serif weight="600" style={{ fontSize: 20 }}>
             {t('remove')}?
           </AppText>
-          <AppText style={{ fontSize: 13.5, color: colors.ink50, marginTop: 8, textAlign: 'center' }}>
-            This deletes the inspection and its media from Storage.
+          <AppText weight="600" style={{ fontSize: 15, color: colors.ink, marginTop: 4 }}>
+            {c.number}
+          </AppText>
+          <AppText style={{ fontSize: 13.5, color: colors.ink50, marginTop: 6, textAlign: 'center' }}>
+            {t.locale === 'es'
+              ? 'Se eliminará el contenedor y todas sus inspecciones y archivos. Esta acción no se puede deshacer.'
+              : 'This deletes the container and all its inspections and files. This cannot be undone.'}
           </AppText>
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 22, width: '100%' }}>
             <Button variant="outline" onPress={() => setDelOpen(false)} style={{ flex: 1 }}>
@@ -222,17 +229,22 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
             <Button
               variant="danger"
               icon="trash"
+              loading={deleting}
               style={{ flex: 1 }}
               onPress={async () => {
-                if (!ins) return setDelOpen(false);
+                if (deleting) return;
+                setDeleting(true);
                 try {
-                  await Insp.deleteInspection(ins.id);
+                  await deleteContainer(c.id);
+                  haptic('success');
                   setDelOpen(false);
                   showToast(`${c.number} · ${t('remove')}`, 'warn');
                   onClose();
                   refreshContainers();
                 } catch (e: any) {
                   showToast(e?.message || t('errorGeneric'), 'error');
+                } finally {
+                  setDeleting(false);
                 }
               }}
             >
