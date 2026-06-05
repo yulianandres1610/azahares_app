@@ -4,6 +4,14 @@ import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { getMe, otpLoginSuccess, otpSettings } from '../lib/api/me';
 import { listContainers } from '../lib/api/containers';
+import {
+  listNotifications,
+  markNotifReadApi,
+  markAllNotifsReadApi,
+  removeNotifApi,
+  clearNotifsApi,
+  type NotificationDto,
+} from '../lib/api/notifications';
 import type { Container, Me } from '../lib/api/types';
 import { CONFIG_OK } from '../config';
 import { deviceLocale, makeT, type Locale, type T } from '../i18n';
@@ -45,6 +53,7 @@ interface AppState {
   setBiometricType: (b: BiometricType) => void;
   setBiometricEnabled: (v: boolean) => void;
   showToast: (msg: string, tone?: Toast['tone']) => void;
+  refreshNotifications: () => Promise<void>;
   markNotifRead: (id: string) => void;
   markAllNotifsRead: () => void;
   removeNotif: (id: string) => void;
@@ -63,16 +72,44 @@ export interface AppNotification {
   read: boolean;
 }
 
-function seedNotifications(): AppNotification[] {
-  const now = Date.now();
-  return [
-    { id: 'n1', kind: 'refuel', title: 'Inspección refuel lista', body: 'Un contenedor pasó la inspección de refuel. Revisá sellos y nivel.', containerId: null, time: 'hace 8m', ts: now - 48e4, read: false },
-    { id: 'n2', kind: 'available', title: 'Contenedor disponible', body: 'Un contenedor quedó etiquetado y listo para despacho.', containerId: null, time: 'hace 1h', ts: now - 36e5, read: false },
-    { id: 'n3', kind: 'coa', title: 'COA cargado', body: 'Se agregó el certificado de análisis a un contenedor.', containerId: null, time: 'hace 3h', ts: now - 108e5, read: false },
-    { id: 'n4', kind: 'inspection', title: 'Inspección visual asignada', body: 'Te asignaron como empleado de yarda de un contenedor.', containerId: null, time: 'Hoy, 8:10', ts: now - 5e6, read: true },
-    { id: 'n5', kind: 'delivery', title: 'Marcado entregado', body: 'Un contenedor está en retorno. Iniciará un nuevo ciclo al llegar.', containerId: null, time: 'Ayer', ts: now - 9e7, read: true },
-    { id: 'n7', kind: 'system', title: 'Nueva versión 1.0', body: 'Subidas más rápidas y cola offline para fotos y video.', containerId: null, time: 'hace 2d', ts: now - 17e7, read: true },
-  ];
+// Mapea el `type` del backend al kind de la UI (ícono + color).
+function kindFromType(type: string): NotifKind {
+  const x = (type || '').toLowerCase();
+  if (x.includes('refuel')) return 'refuel';
+  if (x.includes('available') || x.includes('disponible')) return 'available';
+  if (x.includes('coa')) return 'coa';
+  if (x.includes('visual') || x.includes('inspec')) return 'inspection';
+  if (x.includes('deliver') || x.includes('entreg') || x.includes('transit') || x.includes('vessel') || x.startsWith('container_') || x.includes('return') || x.includes('retorno'))
+    return 'delivery';
+  if (x.includes('maint') || x.includes('alert')) return 'alert';
+  return 'system';
+}
+
+function relTime(iso: string, es: boolean): string {
+  const ts = new Date(iso).getTime();
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return es ? 'ahora' : 'now';
+  if (m < 60) return es ? `hace ${m}m` : `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return es ? `hace ${h}h` : `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return es ? 'Ayer' : 'Yesterday';
+  return es ? `hace ${d}d` : `${d}d ago`;
+}
+
+function mapNotif(dto: NotificationDto, es: boolean): AppNotification {
+  const md = (dto.metadata || {}) as Record<string, unknown>;
+  const containerId = (md.containerId as string) || (md.container_id as string) || null;
+  return {
+    id: dto.id,
+    kind: kindFromType(dto.type),
+    title: dto.title,
+    body: dto.body || '',
+    containerId,
+    time: relTime(dto.createdAt, es),
+    ts: new Date(dto.createdAt).getTime(),
+    read: !!dto.readAt,
+  };
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -92,19 +129,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const [biometricType, setBiometricTypeState] = useState<BiometricType>('face');
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => seedNotifications());
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localeRef = useRef<Locale>(locale);
+  localeRef.current = locale;
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const { items } = await listNotifications();
+      const es = localeRef.current === 'es';
+      setNotifications((items || []).map((d) => mapNotif(d, es)));
+    } catch {
+      // sin notificaciones / error → no romper
+    }
+  }, []);
 
   const markNotifRead = useCallback((id: string) => {
     setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    markNotifReadApi(id).catch(() => {});
   }, []);
   const markAllNotifsRead = useCallback(() => {
     setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
+    markAllNotifsReadApi().catch(() => {});
   }, []);
   const removeNotif = useCallback((id: string) => {
     setNotifications((ns) => ns.filter((n) => n.id !== id));
+    removeNotifApi(id).catch(() => {});
   }, []);
-  const clearNotifs = useCallback(() => setNotifications([]), []);
+  const clearNotifs = useCallback(() => {
+    setNotifications([]);
+    clearNotifsApi().catch(() => {});
+  }, []);
 
   const t = useMemo(() => makeT(locale), [locale]);
 
@@ -142,11 +197,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       setPhase('ready');
       refreshContainers();
+      refreshNotifications();
     } catch {
       // sin perfil válido → desautenticado
       setPhase('unauth');
     }
-  }, [refreshContainers]);
+  }, [refreshContainers, refreshNotifications]);
 
   const bootstrap = useCallback(async () => {
     // preferencias locales
@@ -216,16 +272,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } else {
         setPhase('ready');
         refreshContainers();
+        refreshNotifications();
       }
       return { needsOtp };
     },
-    [refreshContainers],
+    [refreshContainers, refreshNotifications],
   );
 
   const onOtpVerified = useCallback(async () => {
     setPhase('ready');
     await refreshContainers();
-  }, [refreshContainers]);
+    refreshNotifications();
+  }, [refreshContainers, refreshNotifications]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -282,6 +340,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setBiometricEnabled,
     showToast,
     notifications,
+    refreshNotifications,
     markNotifRead,
     markAllNotifsRead,
     removeNotif,
