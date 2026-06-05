@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "Azahares",
+    "slug": "azahares-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "azahares",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0d1b3d"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.azaharesfuel.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Azahares usa la cámara para fotografiar contenedores y grabar el video de inspección de refuel.",
+        "NSMicrophoneUsageDescription": "Azahares usa el micrófono al grabar el video de inspección del tanque.",
+        "NSPhotoLibraryUsageDescription": "Azahares accede a tus fotos para adjuntar imágenes de contenedores y tu avatar.",
+        "NSFaceIDUsageDescription": "Azahares usa Face ID para desbloquear tu sesión de forma segura.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.azaharesfuel.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0d1b3d",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["CAMERA", "RECORD_AUDIO", "USE_BIOMETRIC", "USE_FINGERPRINT"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      "expo-localization",
+      "expo-video",
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Azahares usa la cámara para las inspecciones de contenedores.",
+          "microphonePermission": "Azahares usa el micrófono al grabar el video de inspección.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Azahares usa Face ID para desbloquear tu sesión."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Azahares accede a tus fotos para adjuntar imágenes y tu avatar."
+        }
+      ]
+    ]
+  }
+}
