@@ -8,6 +8,7 @@ import { AppText, Avatar, IconButton, Ring, Screen, Tap, haptic } from '../../co
 import { counts, statusMeta } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
+import { useWeather, weatherCondition, weatherIcon } from '../../lib/weather';
 import type { T } from '../../i18n';
 
 // Entrada slide-up + fade (azUp del diseño).
@@ -210,16 +211,21 @@ function Metric({ icon, val, label }: { icon: IconName; val: string; label: stri
 }
 
 function WeatherCard({ t }: { t: T }) {
-  // Datos de clima de muestra (un módulo de clima real puede cablearse luego).
-  const w = { temp: 29, feels: 32, cond: t('wPartlyCloudy'), loc: 'Miami', icon: 'cloudSun' as IconName, wind: 14, humidity: 68, uv: 8 };
-  const hours = [
-    { h: t('wNow'), temp: 29, icon: 'cloudSun' as IconName },
-    { h: '14:00', temp: 30, icon: 'sun' as IconName },
-    { h: '15:00', temp: 31, icon: 'sun' as IconName },
-    { h: '16:00', temp: 30, icon: 'cloudSun' as IconName },
-    { h: '17:00', temp: 28, icon: 'cloud' as IconName },
-    { h: '18:00', temp: 27, icon: 'cloud' as IconName },
+  const es = t.locale === 'es';
+  const { weather } = useWeather(t('wNow'));
+  const SAMPLE_HOURS = [
+    { label: t('wNow'), temp: 29, code: 2 },
+    { label: '14:00', temp: 30, code: 0 },
+    { label: '15:00', temp: 31, code: 0 },
+    { label: '16:00', temp: 30, code: 2 },
+    { label: '17:00', temp: 28, code: 3 },
+    { label: '18:00', temp: 27, code: 3 },
   ];
+  const w = weather ?? { tempC: 29, feels: 32, humidity: 68, windKmh: 14, uv: 8, code: 2, city: 'Miami', hours: SAMPLE_HOURS };
+  const hours = w.hours.length ? w.hours : SAMPLE_HOURS;
+  const cond = weatherCondition(w.code, es);
+  const icon = weatherIcon(w.code);
+  const uvLevel = w.uv >= 8 ? (es ? 'Alto' : 'High') : w.uv >= 6 ? (es ? 'Mod' : 'Mod') : es ? 'Bajo' : 'Low';
   return (
     <FadeUp delay={40} style={{ paddingHorizontal: 16, paddingTop: 14 }}>
       <View style={{ borderRadius: radius.xl, overflow: 'hidden', ...shadows.card }}>
@@ -229,33 +235,33 @@ function WeatherCard({ t }: { t: T }) {
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                 <AppText serif weight="600" style={{ fontSize: 46, color: '#fff', lineHeight: 44 }}>
-                  {w.temp}
+                  {w.tempC}
                 </AppText>
                 <AppText weight="500" style={{ color: '#fff', fontSize: 20, marginTop: 3 }}>
                   °C
                 </AppText>
               </View>
               <AppText weight="600" style={{ color: '#fff', fontSize: 14, marginTop: 6 }}>
-                {w.cond}
+                {cond}
               </AppText>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <Icon name="map" size={12} color="rgba(255,255,255,0.7)" />
                 <AppText style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-                  {w.loc} · {t('feelsLike')} {w.feels}°
+                  {w.city ? `${w.city} · ` : ''}{t('feelsLike')} {w.feels}°
                 </AppText>
               </View>
             </View>
             <Floating>
-              <Icon name={w.icon} size={58} color="#fff" />
+              <Icon name={icon} size={58} color="#fff" />
             </Floating>
           </View>
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' }}>
-            <Metric icon="wind" val={`${w.wind} km/h`} label={t('wind')} />
+            <Metric icon="wind" val={`${w.windKmh} km/h`} label={t('wind')} />
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
             <Metric icon="droplet" val={`${w.humidity}%`} label={t('humidity')} />
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
-            <Metric icon="uv" val={`${w.uv} · ${t('wHigh')}`} label={t('uvIndex')} />
+            <Metric icon="uv" val={`${w.uv} · ${uvLevel}`} label={t('uvIndex')} />
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8 }}>
@@ -272,9 +278,9 @@ function WeatherCard({ t }: { t: T }) {
                 }}
               >
                 <AppText weight="600" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 10.5 }}>
-                  {h.h}
+                  {h.label}
                 </AppText>
-                <Icon name={h.icon} size={20} color="#fff" />
+                <Icon name={weatherIcon(h.code)} size={20} color="#fff" />
                 <AppText weight="700" style={{ color: '#fff', fontSize: 13 }}>
                   {h.temp}°
                 </AppText>

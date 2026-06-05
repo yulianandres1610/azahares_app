@@ -51,6 +51,9 @@ export function haptic(kind: 'light' | 'medium' | 'heavy' | 'success' | 'warn' |
 }
 
 // ── Tap: pressable con escala (az-press) ─────────────────────
+// El style va sobre el propio Pressable (animado) para que width/flex/
+// aspectRatio funcionen correctamente, igual que el transform de escala.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export function Tap({
   children,
   onPress,
@@ -71,7 +74,7 @@ export function Tap({
   const to = (v: number) =>
     Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
   return (
-    <Pressable
+    <AnimatedPressable
       disabled={disabled}
       onPressIn={() => to(scaleTo)}
       onPressOut={() => to(1)}
@@ -80,10 +83,11 @@ export function Tap({
         if (hapticKind) haptic(hapticKind);
         onPress?.();
       }}
+      style={[style, { transform: [{ scale }] }]}
       {...rest}
     >
-      <Animated.View style={[{ transform: [{ scale }] }, style]}>{children}</Animated.View>
-    </Pressable>
+      {children}
+    </AnimatedPressable>
   );
 }
 

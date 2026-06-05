@@ -19,6 +19,7 @@
         "NSMicrophoneUsageDescription": "Azahares usa el micrófono al grabar el video de inspección del tanque.",
         "NSPhotoLibraryUsageDescription": "Azahares accede a tus fotos para adjuntar imágenes de contenedores y tu avatar.",
         "NSFaceIDUsageDescription": "Azahares usa Face ID para desbloquear tu sesión de forma segura.",
+        "NSLocationWhenInUseUsageDescription": "Azahares usa tu ubicación para mostrar el clima de la yarda.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -59,6 +60,12 @@
         "expo-image-picker",
         {
           "photosPermission": "Azahares accede a tus fotos para adjuntar imágenes y tu avatar."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Azahares usa tu ubicación para mostrar el clima de la yarda."
         }
       ]
     ]

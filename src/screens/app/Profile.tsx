@@ -22,20 +22,47 @@ export function Profile() {
 
   const langLabel = { auto: 'Auto', en: 'English', es: 'Español' }[localePref];
 
-  const pickAvatar = async () => {
-    setAvatarSheet(false);
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
-    if (res.canceled || !res.assets[0]) return;
+  const es = t.locale === 'es';
+
+  const handleAsset = async (res: ImagePicker.ImagePickerResult) => {
+    if (res.canceled || !res.assets?.[0]) return;
     try {
-      const updated = await uploadAvatar(res.assets[0].uri, res.assets[0].mimeType || 'image/jpeg');
+      const a = res.assets[0];
+      const updated = await uploadAvatar(a.uri, a.mimeType || 'image/jpeg');
       setMe(updated);
       haptic('success');
       showToast(t('done'));
     } catch (e: any) {
       showToast(e?.message || t('errorGeneric'), 'error');
     }
+  };
+
+  // Cierra el sheet y, tras la animación de cierre, abre el picker
+  // (en iOS no se puede presentar el picker mientras el modal se cierra).
+  const takePhoto = () => {
+    setAvatarSheet(false);
+    setTimeout(async () => {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showToast(es ? 'Permiso de cámara denegado' : 'Camera permission denied', 'warn');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      handleAsset(res);
+    }, 450);
+  };
+
+  const pickFromGallery = () => {
+    setAvatarSheet(false);
+    setTimeout(async () => {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showToast(es ? 'Permiso de galería denegado' : 'Photo library permission denied', 'warn');
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      handleAsset(res);
+    }, 450);
   };
 
   const removeAvatar = async () => {
@@ -150,7 +177,8 @@ export function Profile() {
       {/* avatar sheet */}
       <Sheet open={avatarSheet} onClose={() => setAvatarSheet(false)} title={t('editProfile')}>
         <View style={{ paddingHorizontal: 16, paddingBottom: 28, gap: 10 }}>
-          <SheetAction icon="image" label={t('addPhoto')} onPress={pickAvatar} />
+          <SheetAction icon="camera" label={es ? 'Tomar foto' : 'Take photo'} onPress={takePhoto} />
+          <SheetAction icon="image" label={es ? 'Elegir de galería' : 'Choose from gallery'} onPress={pickFromGallery} />
           {me?.avatarUrl ? <SheetAction icon="trash" label={t('remove')} danger onPress={removeAvatar} /> : null}
         </View>
       </Sheet>
