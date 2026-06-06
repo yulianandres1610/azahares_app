@@ -27,17 +27,18 @@ function keyFor(url: string): string {
 
 export function useLocalImage(url: string | null | undefined) {
   const [uri, setUri] = useState<string | null>(null);
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!url) {
       setUri(null);
-      setErr(false);
+      setErr(null);
       return;
     }
     let alive = true;
     setUri(null);
-    setErr(false);
+    setErr(null);
+    const to = setTimeout(() => alive && setErr((e) => e ?? 'timeout'), 30000);
     (async () => {
       try {
         const dest = DIR + keyFor(url);
@@ -47,16 +48,48 @@ export function useLocalImage(url: string | null | undefined) {
           return;
         }
         await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
-        const res = await FileSystem.downloadAsync(url, dest);
-        if (!alive) return;
-        if (res.status >= 200 && res.status < 300) setUri(res.uri);
-        else setErr(true);
-      } catch {
-        if (alive) setErr(true);
+        // Estrategia 1: expo-file-system (la red que ya funciona para subir).
+        try {
+          const res = await FileSystem.downloadAsync(url, dest);
+          if (alive && res.status >= 200 && res.status < 300) {
+            setUri(res.uri);
+            return;
+          }
+          if (alive && res.status) {
+            setErr('http ' + res.status);
+            return;
+          }
+        } catch (e1: any) {
+          // Estrategia 2: fetch → base64 (misma red que auth/API, que sí funciona).
+          try {
+            const r = await fetch(url);
+            if (!r.ok) {
+              if (alive) setErr('fetch ' + r.status);
+              return;
+            }
+            const blob = await r.blob();
+            const b64: string = await new Promise((resolve, reject) => {
+              const fr = new FileReader();
+              fr.onload = () => resolve(String(fr.result));
+              fr.onerror = () => reject(new Error('reader'));
+              fr.readAsDataURL(blob);
+            });
+            if (alive) setUri(b64);
+            return;
+          } catch (e2: any) {
+            if (alive) setErr('dl:' + String(e1?.message || e1).slice(0, 40));
+            return;
+          }
+        }
+      } catch (e: any) {
+        if (alive) setErr(String(e?.message || e).slice(0, 50));
+      } finally {
+        clearTimeout(to);
       }
     })();
     return () => {
       alive = false;
+      clearTimeout(to);
     };
   }, [url]);
 
