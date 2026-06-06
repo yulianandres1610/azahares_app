@@ -80,7 +80,13 @@ function mapContainer(raw: any): Container {
     tare: raw.tareWeightKg != null ? Number(raw.tareWeightKg) : raw.tare ?? null,
     tareUnit: raw.tareWeightUnit ?? raw.tareUnit ?? 'kg',
     ownership: raw.ownership ?? null,
-    price: raw.price ?? null,
+    // El detalle (getContainer) trae rent/owned; la lista no. Derivamos el precio.
+    price:
+      raw.rent?.cost != null
+        ? Number(raw.rent.cost)
+        : raw.owned?.purchaseCost != null
+        ? Number(raw.owned.purchaseCost)
+        : raw.price ?? null,
     currency: raw.currency ?? 'USD',
     status: raw.status,
     cycle: raw.cycle ?? null,

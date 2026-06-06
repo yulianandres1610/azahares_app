@@ -16,7 +16,7 @@ import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../doma
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
-import { deleteContainer, enableGps, listContainerImages, listLocations } from '../../lib/api/containers';
+import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
 import { GlobeSpinner } from '../../components/GlobeSpinner';
@@ -356,8 +356,21 @@ function ContainerInfoPanel({
   onHistory: () => void;
   onSync: () => Promise<void>;
 }) {
-  const meta = statusMeta(c.status);
-  const tt = TYPES[c.type] ?? { icon: 'cube' as IconName };
+  // Traemos el detalle completo: la lista no incluye rent/owned (precio).
+  const [full, setFull] = useState<Container>(c);
+  useEffect(() => {
+    let alive = true;
+    setFull(c);
+    getContainer(c.id)
+      .then((r) => alive && setFull(r))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [c.id]);
+  const cc = full;
+  const meta = statusMeta(cc.status);
+  const tt = TYPES[cc.type] ?? { icon: 'cube' as IconName };
   const [imgs, setImgs] = useState<ContainerImage[]>([]);
   const [imgsLoading, setImgsLoading] = useState(true);
   useEffect(() => {
@@ -381,9 +394,9 @@ function ContainerInfoPanel({
       {/* yarda + estado */}
       <Card pad={0}>
         <InfoRow icon="map" label={t('yard')} value={providerName} accent />
-        <InfoRow icon={meta.icon} label={t('currentState')} valueNode={<StatusBadge status={c.status} size="sm" />} />
-        <InfoRow icon="refresh" label={t('cycle')} value={`${t('cycle')} ${c.cycle ?? 1}`} />
-        <InfoRow icon="clock" label={t('lastUpdate')} value={t.rel(c.updatedAt)} last />
+        <InfoRow icon={meta.icon} label={t('currentState')} valueNode={<StatusBadge status={cc.status} size="sm" />} />
+        <InfoRow icon="refresh" label={t('cycle')} value={`${t('cycle')} ${cc.cycle ?? 1}`} />
+        <InfoRow icon="clock" label={t('lastUpdate')} value={t.rel(cc.updatedAt)} last />
       </Card>
 
       {/* fotos de creación */}
@@ -418,20 +431,20 @@ function ContainerInfoPanel({
         <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
           <CardHead icon={tt.icon} title={t('specsTitle')} />
         </View>
-        <InfoRow icon="box" label={t('type')} value={`${t(c.type)} · ${c.size || '—'}`} />
-        <InfoRow icon="droplet" label={t('capacity')} value={c.capacity != null ? `${c.capacity.toLocaleString()} ${c.unit || ''}` : '—'} />
-        <InfoRow icon="cube" label={t('tare')} value={c.tare != null ? `${c.tare.toLocaleString()} ${c.tareUnit || 'kg'}` : '—'} />
-        <InfoRow icon={c.ownership === 'owned' ? 'key' : 'history'} label={t('ownerInfo')} value={t(c.ownership || 'owned')} />
+        <InfoRow icon="box" label={t('type')} value={`${t(cc.type)} · ${cc.size || '—'}`} />
+        <InfoRow icon="droplet" label={t('capacity')} value={cc.capacity != null ? `${cc.capacity.toLocaleString()} ${cc.unit || ''}` : '—'} />
+        <InfoRow icon="cube" label={t('tare')} value={cc.tare != null ? `${cc.tare.toLocaleString()} ${cc.tareUnit || 'kg'}` : '—'} />
+        <InfoRow icon={cc.ownership === 'owned' ? 'key' : 'history'} label={t('ownerInfo')} value={t(cc.ownership || 'owned')} />
         <InfoRow
           icon="dollar"
-          label={c.ownership === 'rented' ? t('monthlyRate') : t('purchasePrice')}
-          value={c.price ? `${Number(c.price).toLocaleString()} ${c.currency || 'USD'}${c.ownership === 'rented' ? '/mo' : ''}` : '—'}
+          label={cc.ownership === 'rented' ? t('monthlyRate') : t('purchasePrice')}
+          value={cc.price ? `${Number(cc.price).toLocaleString()} ${cc.currency || 'USD'}${cc.ownership === 'rented' ? '/mo' : ''}` : '—'}
           last
         />
       </Card>
 
       {/* GPS */}
-      <LocationCard c={c} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
+      <LocationCard c={cc} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
     </View>
   );
 }
@@ -445,8 +458,9 @@ function CreationPhoto({ url, label, w, h }: { url: string | null; label: string
       {url && !failed && (
         <Image
           source={{ uri: url }}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
           resizeMode="cover"
+          onLoad={() => setLoaded(true)}
           onLoadEnd={() => setLoaded(true)}
           onError={() => setFailed(true)}
         />
@@ -684,6 +698,10 @@ function PhotoTile({
 }) {
   const { t } = useApp();
   const has = !!data;
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setLoaded(false);
+  }, [data]);
   // Dimensiones en píxeles explícitas (aspectRatio + % colapsaba dentro del wrap).
   const gridW = Dimensions.get('window').width - 32; // padding 16*2
   const colW = (gridW - 10) / 2; // dos columnas, gap 10
@@ -704,7 +722,20 @@ function PhotoTile({
         borderStyle: has ? 'solid' : 'dashed',
       }}
     >
-      {has && <Image source={{ uri: data! }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />}
+      {has && (
+        <Image
+          source={{ uri: data! }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+          resizeMode="cover"
+          onLoad={() => setLoaded(true)}
+          onLoadEnd={() => setLoaded(true)}
+        />
+      )}
+      {has && !loaded && uploading == null && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <GlobeSpinner size={34} showHalo={false} />
+        </View>
+      )}
       <View style={{ position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: has ? 'rgba(8,14,33,0.55)' : 'transparent', paddingHorizontal: has ? 8 : 0, paddingVertical: has ? 4 : 0, borderRadius: 999 }}>
         {has && <CheckMark size={13} color={colors.success} />}
         <AppText weight="600" style={{ fontSize: 11, color: has ? '#fff' : colors.ink50 }}>
