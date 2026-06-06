@@ -453,10 +453,16 @@ function ContainerInfoPanel({
 // Foto de creación con spinner del splash hasta que cargue la imagen.
 function CreationPhoto({ url, label, w, h }: { url: string | null; label: string; w: number; h: number }) {
   const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Diagnóstico: si en 9s no cargó ni erroró, marcamos timeout para ver qué pasa.
+  useEffect(() => {
+    if (!url) return;
+    const id = setTimeout(() => setErr((e) => (e == null && !loaded ? 'timeout' : e)), 9000);
+    return () => clearTimeout(id);
+  }, [url, loaded]);
   return (
     <View style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
-      {url && !failed && (
+      {url && (
         <ExpoImage
           source={url}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
@@ -464,13 +470,16 @@ function CreationPhoto({ url, label, w, h }: { url: string | null; label: string
           transition={150}
           cachePolicy="memory-disk"
           onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onError={(e: any) => setErr(String(e?.error ?? 'error'))}
         />
       )}
-      {(!url || !loaded || failed) && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-          {failed || !url ? (
-            <Icon name="image" size={26} color="rgba(255,255,255,0.35)" />
+      {(!url || !loaded) && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
+          {err || !url ? (
+            <>
+              <Icon name="image" size={24} color="rgba(255,255,255,0.45)" />
+              {err ? <AppText style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 6, textAlign: 'center' }}>{err.slice(0, 80)}</AppText> : null}
+            </>
           ) : (
             <GlobeSpinner size={34} showHalo={false} />
           )}
