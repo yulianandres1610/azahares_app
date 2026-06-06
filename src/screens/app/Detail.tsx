@@ -19,6 +19,7 @@ import * as Insp from '../../lib/api/inspections';
 import { deleteContainer, enableGps, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
+import { GlobeSpinner } from '../../components/GlobeSpinner';
 import type { T } from '../../i18n';
 import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
 
@@ -395,12 +396,7 @@ function ContainerInfoPanel({
         ) : photos.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
             {photos.map((im, i) => (
-              <View key={im.id} style={{ width: tileW, height: tileH, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
-                {im.url && <Image source={{ uri: im.url }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />}
-                <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
-                  <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{t(SIDE_KEYS[i] ?? 'photoOpt')}</AppText>
-                </View>
-              </View>
+              <CreationPhoto key={im.id} url={im.url} label={t(SIDE_KEYS[i] ?? 'photoOpt')} w={tileW} h={tileH} />
             ))}
           </View>
         ) : (
@@ -436,6 +432,37 @@ function ContainerInfoPanel({
 
       {/* GPS */}
       <LocationCard c={c} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
+    </View>
+  );
+}
+
+// Foto de creación con spinner del splash hasta que cargue la imagen.
+function CreationPhoto({ url, label, w, h }: { url: string | null; label: string; w: number; h: number }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <View style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
+      {url && !failed && (
+        <Image
+          source={{ uri: url }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          resizeMode="cover"
+          onLoadEnd={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+        />
+      )}
+      {(!url || !loaded || failed) && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          {failed || !url ? (
+            <Icon name="image" size={26} color="rgba(255,255,255,0.35)" />
+          ) : (
+            <GlobeSpinner size={34} showHalo={false} />
+          )}
+        </View>
+      )}
+      <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+        <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{label}</AppText>
+      </View>
     </View>
   );
 }
