@@ -18,6 +18,7 @@ import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
 import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
+import { Image as ExpoImage } from 'expo-image';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
 import { GlobeSpinner } from '../../components/GlobeSpinner';
 import type { T } from '../../i18n';
@@ -456,12 +457,13 @@ function CreationPhoto({ url, label, w, h }: { url: string | null; label: string
   return (
     <View style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
       {url && !failed && (
-        <Image
-          source={{ uri: url }}
+        <ExpoImage
+          source={url}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-          resizeMode="cover"
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
           onLoad={() => setLoaded(true)}
-          onLoadEnd={() => setLoaded(true)}
           onError={() => setFailed(true)}
         />
       )}
@@ -723,12 +725,13 @@ function PhotoTile({
       }}
     >
       {has && (
-        <Image
-          source={{ uri: data! }}
+        <ExpoImage
+          source={data!}
           style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-          resizeMode="cover"
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
           onLoad={() => setLoaded(true)}
-          onLoadEnd={() => setLoaded(true)}
         />
       )}
       {has && !loaded && uploading == null && (

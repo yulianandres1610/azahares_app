@@ -30,7 +30,12 @@
         "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["CAMERA", "RECORD_AUDIO", "USE_BIOMETRIC", "USE_FINGERPRINT"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -68,7 +73,8 @@
           "locationWhenInUsePermission": "Azahares usa tu ubicación para mostrar el clima de la yarda."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-image"
     ]
   }
 }
