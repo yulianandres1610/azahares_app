@@ -18,9 +18,8 @@ import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
 import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
-import { Image as ExpoImage } from 'expo-image';
+import { RemoteImage } from '../../components/RemoteImage';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
-import { GlobeSpinner } from '../../components/GlobeSpinner';
 import type { T } from '../../i18n';
 import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
 
@@ -450,41 +449,11 @@ function ContainerInfoPanel({
   );
 }
 
-// Foto de creación con spinner del splash hasta que cargue la imagen.
+// Foto de creación: descarga vía expo-file-system y muestra desde archivo local.
 function CreationPhoto({ url, label, w, h }: { url: string | null; label: string; w: number; h: number }) {
-  const [loaded, setLoaded] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Diagnóstico: si en 9s no cargó ni erroró, marcamos timeout para ver qué pasa.
-  useEffect(() => {
-    if (!url) return;
-    const id = setTimeout(() => setErr((e) => (e == null && !loaded ? 'timeout' : e)), 9000);
-    return () => clearTimeout(id);
-  }, [url, loaded]);
   return (
     <View style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
-      {url && (
-        <ExpoImage
-          source={url}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
-          onLoad={() => setLoaded(true)}
-          onError={(e: any) => setErr(String(e?.error ?? 'error'))}
-        />
-      )}
-      {(!url || !loaded) && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }}>
-          {err || !url ? (
-            <>
-              <Icon name="image" size={24} color="rgba(255,255,255,0.45)" />
-              {err ? <AppText style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 6, textAlign: 'center' }}>{err.slice(0, 80)}</AppText> : null}
-            </>
-          ) : (
-            <GlobeSpinner size={34} showHalo={false} />
-          )}
-        </View>
-      )}
+      <RemoteImage url={url} />
       <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
         <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{label}</AppText>
       </View>
@@ -709,10 +678,6 @@ function PhotoTile({
 }) {
   const { t } = useApp();
   const has = !!data;
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    setLoaded(false);
-  }, [data]);
   // Dimensiones en píxeles explícitas (aspectRatio + % colapsaba dentro del wrap).
   const gridW = Dimensions.get('window').width - 32; // padding 16*2
   const colW = (gridW - 10) / 2; // dos columnas, gap 10
@@ -733,21 +698,7 @@ function PhotoTile({
         borderStyle: has ? 'solid' : 'dashed',
       }}
     >
-      {has && (
-        <ExpoImage
-          source={data!}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-          contentFit="cover"
-          transition={150}
-          cachePolicy="memory-disk"
-          onLoad={() => setLoaded(true)}
-        />
-      )}
-      {has && !loaded && uploading == null && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-          <GlobeSpinner size={34} showHalo={false} />
-        </View>
-      )}
+      {has && uploading == null && <RemoteImage url={data!} />}
       <View style={{ position: 'absolute', top: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: has ? 'rgba(8,14,33,0.55)' : 'transparent', paddingHorizontal: has ? 8 : 0, paddingVertical: has ? 4 : 0, borderRadius: 999 }}>
         {has && <CheckMark size={13} color={colors.success} />}
         <AppText weight="600" style={{ fontSize: 11, color: has ? '#fff' : colors.ink50 }}>
