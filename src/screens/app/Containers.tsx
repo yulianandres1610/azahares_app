@@ -89,8 +89,8 @@ export function ContainerCard({ c, onPress }: { c: Container; onPress: () => voi
   const meta = statusMeta(c.status);
   const tt = TYPES[c.type] ?? { icon: 'cube' as const };
   const inspecting = c.status === 'visual_inspection' || c.status === 'refuel_inspection';
-  // progreso real: fotos visuales / 7 en visual; refuel ~70%
-  const pct = c.status === 'visual_inspection' ? Math.round(((c.visualPhotos ?? 0) / 7) * 100) : 70;
+  // progreso real: fotos visuales / 7 en visual; refuel ~66%
+  const vc = c.visualPhotos ?? 0;
 
   return (
     <Card onPress={onPress} pad={14}>
@@ -136,15 +136,20 @@ export function ContainerCard({ c, onPress }: { c: Container; onPress: () => voi
           <StatusBadge status={c.status} size="sm" />
           {c.cycle != null ? (
             <View style={{ backgroundColor: alpha(colors.ink, 0.05), paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-              <AppText weight="600" style={{ color: colors.ink40, fontSize: 10 }}>
+              <AppText weight="600" style={{ color: colors.ink40, fontSize: 9 }}>
                 {t('cycle')} {c.cycle}
               </AppText>
             </View>
           ) : null}
         </View>
         {inspecting && (
-          <View style={{ width: 64 }}>
-            <Progress value={pct} color={meta.color} height={5} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 96, justifyContent: 'flex-end' }}>
+            <AppText weight="600" style={{ fontSize: 11, color: meta.color }}>
+              {c.status === 'visual_inspection' ? `${vc}/7` : t.status(c.status)}
+            </AppText>
+            <View style={{ width: 60 }}>
+              <Progress value={c.status === 'visual_inspection' ? (vc / 7) * 100 : 66} color={meta.color} height={5} />
+            </View>
           </View>
         )}
       </View>

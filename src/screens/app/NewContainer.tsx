@@ -7,6 +7,7 @@ import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
 import { AppText, Button, Card, CheckMark, Field, IconButton, Screen, Segmented, Tap, haptic } from '../../components/ui';
 import { Stepper } from '../../components/Stepper';
+import { Switch } from '../../components/Gps';
 import { CameraCapture } from '../../components/Camera';
 import { TYPES } from '../../domain';
 import { useApp } from '../../store/AppContext';
@@ -35,6 +36,9 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
     ownership: 'owned',
     price: '',
     currency: 'USD',
+    gpsEnabled: false,
+    gpsAssetId: '',
+    gpsSerial: '',
     photos: [null, null, null, null] as (string | null)[],
   });
   const set = (k: keyof typeof d, v: any) => setD((p) => ({ ...p, [k]: v }));
@@ -50,7 +54,14 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
   const LAST = 3;
   // ISO 6346: 4 letras + 7 dígitos (ej. RFCU1234567)
   const numberValid = /^[A-Z]{4}[0-9]{7}$/.test(d.number.trim());
-  const canNext = step === 0 ? numberValid : step === 1 ? !!(d.capacity && d.tare) : step === 2 ? !!String(d.price).trim() : photoCount === 4;
+  const canNext =
+    step === 0
+      ? numberValid
+      : step === 1
+      ? !!(d.capacity && d.tare)
+      : step === 2
+      ? !!String(d.price).trim() && (!d.gpsEnabled || d.gpsAssetId.trim().length >= 4)
+      : photoCount === 4;
 
   const next = () => {
     if (step < LAST) {
@@ -74,6 +85,9 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
         tareUnit: d.tareUnit,
         ownership: d.ownership,
         price: d.price ? Number(d.price) : null,
+        gpsEnabled: d.gpsEnabled,
+        gpsAssetId: d.gpsAssetId,
+        gpsSerial: d.gpsSerial,
       });
       // subir las 4 fotos de registro
       for (const uri of d.photos) {
@@ -101,7 +115,8 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Screen bg={colors.bg} padBottom={0} contentStyle={{ paddingBottom: 120 }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <Screen bg={colors.bg} padBottom={0} contentStyle={{ paddingBottom: 140 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
         <IconButton name="x" variant="plain" onPress={onClose} />
       </View>
@@ -217,6 +232,33 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
                 <Segmented options={['USD', 'EUR', 'MXN']} value={d.currency} onChange={(v) => set('currency', v)} />
               </View>
             </View>
+
+            {/* activación opcional de GPS */}
+            <View style={{ borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.line, overflow: 'hidden' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+                <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: d.gpsEnabled ? alpha(colors.success, 0.14) : alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name={d.gpsEnabled ? 'gps' : 'gpsOff'} size={20} color={d.gpsEnabled ? colors.success : colors.navy700} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText weight="600" style={{ fontSize: 14.5, color: colors.ink }}>
+                    {t('activateNow')}
+                  </AppText>
+                  {!d.gpsEnabled && (
+                    <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2, lineHeight: 17 }}>
+                      {t('activateLater')}
+                    </AppText>
+                  )}
+                </View>
+                <Switch on={d.gpsEnabled} onChange={(v) => { haptic('select'); set('gpsEnabled', v); }} />
+              </View>
+              {d.gpsEnabled && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 13 }}>
+                  <View style={{ height: 1, backgroundColor: colors.line, marginHorizontal: -16, marginBottom: 3 }} />
+                  <Field label={t('assetId')} icon="satellite" placeholder="SAM-0000-AZ" value={d.gpsAssetId} onChangeText={(v) => set('gpsAssetId', v.toUpperCase())} hint={t('assetIdHint')} autoCapitalize="characters" />
+                  <Field label={t('gatewaySerial')} icon="gps" placeholder="G4NS-5RG-FDB" value={d.gpsSerial} onChangeText={(v) => set('gpsSerial', v.toUpperCase())} hint={t('gatewayHint')} autoCapitalize="characters" />
+                </View>
+              )}
+            </View>
           </View>
         )}
 
@@ -228,7 +270,8 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
               <ReviewRow icon="droplet" label={t('capacity')} value={`${Number(d.capacity || 0).toLocaleString()} ${d.unit}`} />
               <ReviewRow icon="cube" label={t('tare')} value={`${Number(d.tare || 0).toLocaleString()} ${d.tareUnit}`} />
               <ReviewRow icon={d.ownership === 'owned' ? 'key' : 'history'} label={t('ownership')} value={t(d.ownership)} />
-              <ReviewRow icon="dollar" label={d.ownership === 'owned' ? t('purchasePrice') : t('monthlyRate')} value={d.price ? `${Number(d.price).toLocaleString()} ${d.currency}` : '—'} last />
+              <ReviewRow icon="dollar" label={d.ownership === 'owned' ? t('purchasePrice') : t('monthlyRate')} value={d.price ? `${Number(d.price).toLocaleString()} ${d.currency}` : '—'} />
+              <ReviewRow icon={d.gpsEnabled ? 'gps' : 'gpsOff'} label={t('gpsTracking')} value={d.gpsEnabled ? t('gpsEnabledReview') : t('gpsWillActivate')} last />
             </Card>
 
             <View>
@@ -274,9 +317,10 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
           </View>
         )}
       </View>
+      </Screen>
 
-      {/* footer fijo */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 16, paddingBottom: insets.bottom + 16, backgroundColor: colors.bg }}>
+      {/* footer fijo (fuera del scroll → siempre abajo) */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 16, paddingBottom: insets.bottom + 16, backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: alpha(colors.ink, 0.06) }}>
         <Button onPress={next} disabled={!canNext} loading={busy} variant={step === LAST ? 'success' : 'primary'} icon={step === LAST ? 'check' : undefined} iconRight={step < LAST ? 'arrowR' : undefined}>
           {step === LAST ? t('create') : t('next')}
         </Button>
@@ -299,7 +343,7 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
           }}
         />
       )}
-    </Screen>
+    </View>
   );
 }
 

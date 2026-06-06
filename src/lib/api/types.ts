@@ -38,6 +38,32 @@ export type ContainerStatus =
   | 'returning'
   | 'maintenance';
 
+// ── GPS (shape de UI, mapeado desde el ContainerGpsDto del backend) ──
+export type GpsSync = 'connected' | 'stale' | 'nodata' | 'error';
+
+export interface GpsFix {
+  lat: number;
+  lng: number;
+  /** Posición normalizada 0..1 para el mapa estilizado (decorativo). */
+  x: number;
+  y: number;
+  address: string | null;
+  ts: number | null; // epoch ms
+  speed: number; // km/h
+  heading: string; // brújula (N, NE, …)
+  accuracy: number | null; // metros
+}
+
+export interface ContainerGps {
+  enabled: boolean;
+  assetId: string | null;
+  gatewaySerial: string | null;
+  lastFix: GpsFix | null;
+  sync: GpsSync;
+  geofence: { name: string; distanceM: number } | null;
+  track: GpsFix[];
+}
+
 export interface Container {
   id: string;
   number: string;
@@ -55,6 +81,7 @@ export interface Container {
   visualPhotos?: number | null;
   updatedAt?: string | null;
   photoUrl?: string | null;
+  gps: ContainerGps;
 }
 
 export type InspectionStage = 'visual' | 'refuel' | 'completed';

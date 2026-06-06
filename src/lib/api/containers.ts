@@ -3,13 +3,71 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch } from './client';
 import { getAccessToken } from '../supabase';
 import { API_URL } from '../../config';
-import type { Container } from './types';
+import type { Container, ContainerGps, GpsFix, GpsSync } from './types';
 
 // ── Mapeo backend → UI ───────────────────────────────────────
 const UNIT_SHORT: Record<string, string> = { liters: 'L', gallons: 'gal', cubic_meters: 'm³' };
 const UNIT_LONG: Record<string, string> = { L: 'liters', gal: 'gallons', 'm³': 'cubic_meters' };
 const TYPE_TO_UI: Record<string, string> = { refrigerated: 'reefer', fuel: 'fuel', dry: 'dry' };
 const TYPE_TO_API: Record<string, string> = { reefer: 'refrigerated', fuel: 'fuel', dry: 'dry' };
+
+// ── GPS helpers ──────────────────────────────────────────────
+const SYNC_MAP: Record<string, GpsSync> = {
+  ok: 'connected',
+  stale: 'stale',
+  no_data: 'nodata',
+  not_linked: 'nodata',
+  not_configured: 'nodata',
+  resolution_failed: 'error',
+  api_error: 'error',
+};
+
+function degToCompass(deg: number | null | undefined): string {
+  if (deg == null || !Number.isFinite(deg)) return '—';
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  return dirs[Math.round(((deg % 360) / 45)) % 8];
+}
+
+// Proyección decorativa lat/lng → 0..1 (para el mapa estilizado, no geográfico).
+function frac(n: number): number {
+  const f = Math.abs(n) % 1;
+  return 0.12 + f * 0.76; // mantener el pin dentro de los márgenes visibles
+}
+
+function mapFix(raw: any): GpsFix | null {
+  if (raw == null) return null;
+  const lat = raw.lat != null ? Number(raw.lat) : raw.lastLat != null ? Number(raw.lastLat) : null;
+  const lng = raw.lng != null ? Number(raw.lng) : raw.lastLng != null ? Number(raw.lastLng) : null;
+  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const seen = raw.lastSeenAt ?? raw.recordedAt ?? raw.receivedAt ?? raw.ts ?? null;
+  const mph = raw.lastSpeedMph != null ? Number(raw.lastSpeedMph) : raw.speedMph != null ? Number(raw.speedMph) : 0;
+  const deg = raw.lastHeadingDeg != null ? Number(raw.lastHeadingDeg) : raw.headingDeg != null ? Number(raw.headingDeg) : null;
+  return {
+    lat,
+    lng,
+    x: frac(lng),
+    y: frac(lat),
+    address: raw.lastAddress ?? raw.address ?? null,
+    ts: seen ? Date.parse(seen) : null,
+    speed: Math.round((mph || 0) * 1.60934),
+    heading: degToCompass(deg),
+    accuracy: null,
+  };
+}
+
+function mapGps(raw: any): ContainerGps {
+  const g = raw ?? {};
+  const fix = mapFix(g);
+  return {
+    enabled: !!g.enabled,
+    assetId: g.samsaraAssetId ?? null,
+    gatewaySerial: g.samsaraGatewaySerial ?? null,
+    lastFix: fix,
+    sync: SYNC_MAP[g.lastSyncStatus as string] ?? 'nodata',
+    geofence: g.currentGeofence ? { name: g.currentGeofence.name, distanceM: Math.round(g.currentGeofence.distanceM) } : null,
+    track: [],
+  };
+}
 
 function mapContainer(raw: any): Container {
   return {
@@ -29,6 +87,7 @@ function mapContainer(raw: any): Container {
     visualPhotos: raw.visualPhotos ?? 0,
     updatedAt: raw.updatedAt ?? raw.createdAt ?? null,
     photoUrl: raw.photoUrl ?? null,
+    gps: mapGps(raw.gps),
   };
 }
 
@@ -46,6 +105,24 @@ export function deleteContainer(id: string): Promise<unknown> {
   return apiFetch(`/containers/${id}`, { method: 'DELETE' });
 }
 
+// Activar / vincular GPS de un contenedor existente.
+export async function enableGps(
+  id: string,
+  assetId: string,
+  gatewaySerial?: string,
+): Promise<Container> {
+  const body: any = { gpsEnabled: true, samsaraAssetId: assetId };
+  if (gatewaySerial && gatewaySerial.trim()) body.samsaraGatewaySerial = gatewaySerial.trim();
+  const raw = await apiFetch<any>(`/containers/${id}`, { method: 'PATCH', body });
+  return mapContainer(raw);
+}
+
+// Historial de ubicaciones (recorrido) de un contenedor.
+export async function listLocations(id: string, limit = 50): Promise<GpsFix[]> {
+  const rows = await apiFetch<any[]>(`/containers/${id}/locations?limit=${limit}`);
+  return Array.isArray(rows) ? rows.map(mapFix).filter((f): f is GpsFix => f != null) : [];
+}
+
 // Input de la UI (wizard) — campos amigables.
 export interface NewContainerInput {
   number: string;
@@ -57,6 +134,9 @@ export interface NewContainerInput {
   tareUnit: string; // kg | lb
   ownership: string; // owned | rented
   price: number | null;
+  gpsEnabled?: boolean;
+  gpsAssetId?: string;
+  gpsSerial?: string;
 }
 
 export async function createContainer(input: NewContainerInput): Promise<Container> {
@@ -73,6 +153,11 @@ export async function createContainer(input: NewContainerInput): Promise<Contain
     tareWeightUnit: input.tareUnit,
     ownership: input.ownership,
   };
+  if (input.gpsEnabled && input.gpsAssetId && input.gpsAssetId.trim()) {
+    body.gpsEnabled = true;
+    body.samsaraAssetId = input.gpsAssetId.trim();
+    if (input.gpsSerial && input.gpsSerial.trim()) body.samsaraGatewaySerial = input.gpsSerial.trim();
+  }
   const price = input.price ?? 0;
   if (input.ownership === 'rented') {
     body.rent = { cost: price, period: 'monthly' };

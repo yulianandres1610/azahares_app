@@ -210,6 +210,47 @@ const STR: { en: Dict; es: Dict } = {
     pwUpdated: 'Password updated',
     pwHint: 'Use 8+ characters with a mix of letters and numbers.',
     wrongCurrent: 'Current password is incorrect',
+    // gps
+    location: 'Location',
+    gpsTracking: 'GPS tracking',
+    gpsOff: 'GPS tracking off',
+    gpsOffSub: 'Enable GPS to see this container on the map.',
+    enableGps: 'Enable GPS',
+    activateGps: 'Activate GPS tracking',
+    gpsActive: 'GPS active',
+    linkGps: 'Link GPS device',
+    assetId: 'Samsara asset ID',
+    assetIdHint: 'Required to track this container',
+    gatewaySerial: 'Gateway serial',
+    gatewayHint: 'Optional · printed on the device',
+    trackingActive: 'Tracking active',
+    activateNote: 'When enabled, the container reports its position every few minutes through the linked Samsara device.',
+    activate: 'Activate GPS',
+    gpsActivated: 'GPS activated · syncing…',
+    waitingSignal: 'Waiting for first signal…',
+    waitingSignalSub: 'The device was linked. Its first position will appear here shortly.',
+    connected: 'Connected',
+    stale: 'Stale · no new pings',
+    noData: 'No data',
+    gpsError: 'Connection error',
+    currentAddress: 'Current address',
+    updatedAgo: 'Updated',
+    speed: 'Speed',
+    heading: 'Heading',
+    insideGeofence: 'Inside',
+    stationary: 'Stationary',
+    syncNow: 'Sync now',
+    getDirections: 'Directions',
+    viewHistory: 'View history',
+    routeHistory: 'Route history',
+    lastPositions: 'Last positions of this container',
+    gpsStep: 'GPS',
+    activateNow: 'Activate GPS tracking now',
+    activateLater: 'You can activate it later from the container detail.',
+    gpsWillActivate: 'Will activate after creation',
+    gpsEnabledReview: 'Enabled',
+    accuracy: 'Accuracy',
+    noRouteYet: 'No route points yet',
   },
   es: {
     welcome: 'Bienvenido',
@@ -415,6 +456,47 @@ const STR: { en: Dict; es: Dict } = {
     pwUpdated: 'Contraseña actualizada',
     pwHint: 'Usá 8+ caracteres combinando letras y números.',
     wrongCurrent: 'La contraseña actual es incorrecta',
+    // gps
+    location: 'Ubicación',
+    gpsTracking: 'Rastreo GPS',
+    gpsOff: 'Rastreo GPS desactivado',
+    gpsOffSub: 'Activá el GPS para ver este contenedor en el mapa.',
+    enableGps: 'Activar GPS',
+    activateGps: 'Activar rastreo GPS',
+    gpsActive: 'GPS activo',
+    linkGps: 'Vincular dispositivo GPS',
+    assetId: 'ID de asset Samsara',
+    assetIdHint: 'Obligatorio para rastrear este contenedor',
+    gatewaySerial: 'Serial del gateway',
+    gatewayHint: 'Opcional · impreso en el dispositivo',
+    trackingActive: 'Rastreo activo',
+    activateNote: 'Al activarlo, el contenedor reporta su posición cada pocos minutos a través del dispositivo Samsara vinculado.',
+    activate: 'Activar GPS',
+    gpsActivated: 'GPS activado · sincronizando…',
+    waitingSignal: 'Esperando primera señal…',
+    waitingSignalSub: 'El dispositivo fue vinculado. Su primera posición aparecerá acá en breve.',
+    connected: 'Conectado',
+    stale: 'Desactualizado · sin pings nuevos',
+    noData: 'Sin datos',
+    gpsError: 'Error de conexión',
+    currentAddress: 'Dirección actual',
+    updatedAgo: 'Actualizado',
+    speed: 'Velocidad',
+    heading: 'Rumbo',
+    insideGeofence: 'Dentro de',
+    stationary: 'Detenido',
+    syncNow: 'Sincronizar ahora',
+    getDirections: 'Cómo llegar',
+    viewHistory: 'Ver historial',
+    routeHistory: 'Historial de recorrido',
+    lastPositions: 'Últimas ubicaciones de este contenedor',
+    gpsStep: 'GPS',
+    activateNow: 'Activar rastreo GPS ahora',
+    activateLater: 'Podés activarlo después desde el detalle del contenedor.',
+    gpsWillActivate: 'Se activará después',
+    gpsEnabledReview: 'Activado',
+    accuracy: 'Precisión',
+    noRouteYet: 'Aún no hay puntos de recorrido',
   },
 };
 
@@ -477,7 +559,24 @@ export interface T {
   (k: string): string;
   status: (key: string) => string;
   slot: (key: string) => string;
+  rel: (ts: number | string | null | undefined) => string;
   locale: Locale;
+}
+
+// Tiempo relativo corto ("hace 5 min", "2 h ago"). Acepta epoch ms o ISO.
+function relTime(ts: number | string | null | undefined, locale: Locale): string {
+  if (ts == null) return '—';
+  const ms = typeof ts === 'string' ? Date.parse(ts) : ts;
+  if (!Number.isFinite(ms)) return '—';
+  const diff = Math.max(0, Date.now() - ms);
+  const min = Math.floor(diff / 60000);
+  const es = locale === 'es';
+  if (min < 1) return es ? 'recién' : 'just now';
+  if (min < 60) return es ? `hace ${min} min` : `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return es ? `hace ${h} h` : `${h} h ago`;
+  const d = Math.floor(h / 24);
+  return es ? `hace ${d} d` : `${d} d ago`;
 }
 
 export function makeT(locale: Locale): T {
@@ -485,6 +584,7 @@ export function makeT(locale: Locale): T {
   const t = ((k: string) => (k in dict ? dict[k] : STR.en[k] ?? k)) as T;
   t.status = (key: string) => (STATUS_L[locale] || STATUS_L.en)[key as keyof typeof STATUS_L.en] || key;
   t.slot = (key: string) => (SLOT_L[locale] || SLOT_L.en)[key as keyof typeof SLOT_L.en] || key;
+  t.rel = (ts) => relTime(ts, locale);
   t.locale = locale;
   return t;
 }

@@ -1,57 +1,29 @@
 // Etiqueta térmica 4×2 horizontal (alto contraste) con QR real + barcode.
-import React, { useMemo } from 'react';
-import { View } from 'react-native';
+import React from 'react';
+import { Dimensions, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import Svg, { Rect } from 'react-native-svg';
+import RNBarcode from 'react-native-barcode-svg';
 import { fonts } from '../theme/tokens';
 import { AppText } from './ui';
 import { PUBLIC_WEB_URL } from '../config';
 import type { InspectionLabelData } from '../lib/api/types';
 import type { T } from '../i18n';
 
-function hash(str: string) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-function rng(seed: number) {
-  let x = seed || 123456789;
-  return () => {
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    return ((x >>> 0) % 1000) / 1000;
-  };
-}
-
+// Code128 real (escaneable) — react-native-barcode-svg sobre react-native-svg.
 export function Barcode({ value, height = 30, fg = '#0a0a0a' }: { value: string; height?: number; fg?: string }) {
-  const segs = useMemo(() => {
-    const r = rng(hash(value || 'x'));
-    const arr: { w: number; black: boolean }[] = [];
-    let black = true;
-    for (let i = 0; i < 42; i++) {
-      arr.push({ w: 1 + Math.floor(r() * 3), black });
-      black = !black;
-    }
-    arr[0].black = true;
-    arr[arr.length - 1].black = true;
-    return arr;
-  }, [value]);
-  const total = segs.reduce((a, s) => a + s.w, 0);
-  const W = 200;
-  let x = 0;
+  // Ancho disponible en la columna izquierda de la etiqueta térmica (aprox.).
+  const maxWidth = Math.max(150, Math.round(Dimensions.get('window').width - 168));
+  const code = (value || '0').toString().slice(0, 48);
   return (
-    <Svg width="100%" height={height} viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none">
-      {segs.map((s, i) => {
-        const w = (s.w / total) * W;
-        const rect = s.black ? <Rect key={i} x={x} y={0} width={w} height={height} fill={fg} /> : null;
-        x += w;
-        return rect;
-      })}
-    </Svg>
+    <RNBarcode
+      value={code}
+      format="CODE128"
+      maxWidth={maxWidth}
+      height={height}
+      singleBarWidth={1.4}
+      lineColor={fg}
+      backgroundColor="transparent"
+    />
   );
 }
 

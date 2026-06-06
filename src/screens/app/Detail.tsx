@@ -16,8 +16,9 @@ import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../doma
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
-import { deleteContainer } from '../../lib/api/containers';
-import type { Container, ContainerInspection, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
+import { deleteContainer, enableGps, listLocations } from '../../lib/api/containers';
+import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
+import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
 
 export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const { t, containers, refreshContainers, showToast } = useApp();
@@ -29,6 +30,10 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const [histOpen, setHistOpen] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [gpsOpen, setGpsOpen] = useState(false);
+  const [gpsHistOpen, setGpsHistOpen] = useState(false);
+  const [track, setTrack] = useState<GpsFix[]>([]);
+  const [trackLoading, setTrackLoading] = useState(false);
 
   // Paso activo. Tras complete-refuel el backend deja el contenedor en
   // refuel_inspection pero la inspección ya tiene refuelCompletedAt → avanzar
@@ -66,6 +71,36 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const afterStatusChange = useCallback(async () => {
     await Promise.all([refreshContainers(), loadInspection()]);
   }, [refreshContainers, loadInspection]);
+
+  // GPS: activar, sincronizar (re-fetch) y abrir historial de recorrido.
+  const onActivateGps = useCallback(async (assetId: string, serial: string) => {
+    if (!c) return;
+    try {
+      await enableGps(c.id, assetId, serial);
+      await refreshContainers();
+      showToast(t('gpsActivated'), 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+      throw e;
+    }
+  }, [c, refreshContainers, showToast, t]);
+
+  const onSyncGps = useCallback(async () => {
+    await refreshContainers();
+  }, [refreshContainers]);
+
+  const onOpenGpsHistory = useCallback(async () => {
+    if (!c) return;
+    setGpsHistOpen(true);
+    setTrackLoading(true);
+    try {
+      setTrack(await listLocations(c.id, 50));
+    } catch {
+      setTrack([]);
+    } finally {
+      setTrackLoading(false);
+    }
+  }, [c]);
 
   if (!c) {
     return (
@@ -185,6 +220,11 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
         )}
       </View>
 
+      {/* GPS / ubicación de este contenedor */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 18 }}>
+        <LocationCard c={c} t={t} onActivate={() => setGpsOpen(true)} onHistory={onOpenGpsHistory} onSync={onSyncGps} />
+      </View>
+
       {/* history button */}
       <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
         <Tap onPress={() => setHistOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 15, ...shadows.sm }}>
@@ -266,6 +306,9 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
           </View>
         </View>
       </Sheet>
+      {/* GPS: hoja de activación + hoja de historial de recorrido */}
+      <ActivateSheet open={gpsOpen} onClose={() => setGpsOpen(false)} t={t} onSubmit={onActivateGps} />
+      <HistorySheet open={gpsHistOpen} onClose={() => setGpsHistOpen(false)} t={t} status={c.status} type={c.type} track={track} loading={trackLoading} />
     </Screen>
   );
 }
