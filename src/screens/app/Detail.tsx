@@ -9,19 +9,21 @@ import { captureRef } from 'react-native-view-shot';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon, IconName } from '../../components/Icon';
-import { AppText, Button, Card, CheckMark, IconButton, Progress, Ring, Screen, Sheet, StatusBadge, Tap, Field, haptic } from '../../components/ui';
+import { AppText, Button, Card, CheckMark, IconButton, Progress, Ring, Screen, Segmented, Sheet, StatusBadge, Tap, Field, haptic } from '../../components/ui';
 import * as ImagePicker from 'expo-image-picker';
 import { ThermalLabel } from '../../components/Label';
 import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
-import { deleteContainer, enableGps, listLocations } from '../../lib/api/containers';
+import { deleteContainer, enableGps, listContainerImages, listLocations } from '../../lib/api/containers';
+import type { ContainerImage } from '../../lib/api/containers';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
+import type { T } from '../../i18n';
 import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
 
 export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { t, containers, refreshContainers, showToast } = useApp();
+  const { t, me, containers, refreshContainers, showToast } = useApp();
   const insets = useSafeAreaInsets();
   const c = containers.find((x) => x.id === id);
   const [ins, setIns] = useState<ContainerInspection | null>(null);
@@ -32,6 +34,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const [gpsOpen, setGpsOpen] = useState(false);
   const [gpsHistOpen, setGpsHistOpen] = useState(false);
+  const [dtab, setDtab] = useState<'inspection' | 'container'>('inspection');
   const [track, setTrack] = useState<GpsFix[]>([]);
   const [trackLoading, setTrackLoading] = useState(false);
 
@@ -73,10 +76,10 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   }, [refreshContainers, loadInspection]);
 
   // GPS: activar, sincronizar (re-fetch) y abrir historial de recorrido.
-  const onActivateGps = useCallback(async (assetId: string, serial: string) => {
+  const onActivateGps = useCallback(async (serial: string) => {
     if (!c) return;
     try {
-      await enableGps(c.id, assetId, serial);
+      await enableGps(c.id, serial);
       await refreshContainers();
       showToast(t('gpsActivated'), 'success');
     } catch (e: any) {
@@ -173,6 +176,31 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
         </LinearGradient>
       </View>
 
+      {/* switch de vista: Inspección / Contenedor */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 2 }}>
+        <Segmented
+          value={dtab}
+          onChange={(v) => setDtab(v as 'inspection' | 'container')}
+          options={[
+            { value: 'inspection', label: t('tabInspection') },
+            { value: 'container', label: t('tabContainer') },
+          ]}
+        />
+      </View>
+
+      {dtab === 'container' ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+          <ContainerInfoPanel
+            c={c}
+            t={t}
+            providerName={me?.provider?.name ?? '—'}
+            onActivateGps={() => setGpsOpen(true)}
+            onHistory={onOpenGpsHistory}
+            onSync={onSyncGps}
+          />
+        </View>
+      ) : (
+        <>
       {/* returning banner */}
       {c.status === 'returning' && (
         <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
@@ -220,11 +248,6 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
         )}
       </View>
 
-      {/* GPS / ubicación de este contenedor */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 18 }}>
-        <LocationCard c={c} t={t} onActivate={() => setGpsOpen(true)} onHistory={onOpenGpsHistory} onSync={onSyncGps} />
-      </View>
-
       {/* history button */}
       <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
         <Tap onPress={() => setHistOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 15, ...shadows.sm }}>
@@ -240,6 +263,8 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
           <Icon name="chevR" size={18} color={colors.ink30} />
         </Tap>
       </View>
+        </>
+      )}
 
       {/* history sheet */}
       <Sheet open={histOpen} onClose={() => setHistOpen(false)} title={t('cycleHistory')}>
@@ -310,6 +335,152 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       <ActivateSheet open={gpsOpen} onClose={() => setGpsOpen(false)} t={t} onSubmit={onActivateGps} />
       <HistorySheet open={gpsHistOpen} onClose={() => setGpsHistOpen(false)} t={t} status={c.status} type={c.type} track={track} loading={trackLoading} />
     </Screen>
+  );
+}
+
+// ── Pestaña "Contenedor": datos, fotos de creación, specs + GPS ──
+const SIDE_KEYS: string[] = ['sideFront', 'sideRight', 'sideBack', 'sideLeft'];
+function ContainerInfoPanel({
+  c,
+  t,
+  providerName,
+  onActivateGps,
+  onHistory,
+  onSync,
+}: {
+  c: Container;
+  t: T;
+  providerName: string;
+  onActivateGps: () => void;
+  onHistory: () => void;
+  onSync: () => Promise<void>;
+}) {
+  const meta = statusMeta(c.status);
+  const tt = TYPES[c.type] ?? { icon: 'cube' as IconName };
+  const [imgs, setImgs] = useState<ContainerImage[]>([]);
+  const [imgsLoading, setImgsLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setImgsLoading(true);
+    listContainerImages(c.id)
+      .then((r) => alive && setImgs(r))
+      .catch(() => alive && setImgs([]))
+      .finally(() => alive && setImgsLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [c.id]);
+
+  const tileW = (Dimensions.get('window').width - 32 - 32 - 10) / 2;
+  const tileH = Math.round(tileW * 0.81);
+  const photos = imgs.slice(0, 4);
+
+  return (
+    <View style={{ gap: 14 }}>
+      {/* yarda + estado */}
+      <Card pad={0}>
+        <InfoRow icon="map" label={t('yard')} value={providerName} accent />
+        <InfoRow icon={meta.icon} label={t('currentState')} valueNode={<StatusBadge status={c.status} size="sm" />} />
+        <InfoRow icon="refresh" label={t('cycle')} value={`${t('cycle')} ${c.cycle ?? 1}`} />
+        <InfoRow icon="clock" label={t('lastUpdate')} value={t.rel(c.updatedAt)} last />
+      </Card>
+
+      {/* fotos de creación */}
+      <Card pad={16}>
+        <CardHead icon="camera" title={t('creationPhotos')} sub={t('creationPhotosSub')} />
+        {imgsLoading ? (
+          <View style={{ height: 120, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={colors.navy500} />
+          </View>
+        ) : photos.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
+            {photos.map((im, i) => (
+              <View key={im.id} style={{ width: tileW, height: tileH, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
+                {im.url && <Image source={{ uri: im.url }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />}
+                <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+                  <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{t(SIDE_KEYS[i] ?? 'photoOpt')}</AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
+            {SIDE_KEYS.map((k) => (
+              <View key={k} style={{ width: tileW, height: tileH, borderRadius: 14, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+                <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: alpha(colors.accent, 0.12), alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="camera" size={20} color={colors.accent} />
+                </View>
+                <AppText weight="600" style={{ fontSize: 11, color: colors.ink50, marginTop: 6 }}>{t(k)}</AppText>
+              </View>
+            ))}
+          </View>
+        )}
+      </Card>
+
+      {/* especificaciones */}
+      <Card pad={0}>
+        <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+          <CardHead icon={tt.icon} title={t('specsTitle')} />
+        </View>
+        <InfoRow icon="box" label={t('type')} value={`${t(c.type)} · ${c.size || '—'}`} />
+        <InfoRow icon="droplet" label={t('capacity')} value={c.capacity != null ? `${c.capacity.toLocaleString()} ${c.unit || ''}` : '—'} />
+        <InfoRow icon="cube" label={t('tare')} value={c.tare != null ? `${c.tare.toLocaleString()} ${c.tareUnit || 'kg'}` : '—'} />
+        <InfoRow icon={c.ownership === 'owned' ? 'key' : 'history'} label={t('ownerInfo')} value={t(c.ownership || 'owned')} />
+        <InfoRow
+          icon="dollar"
+          label={c.ownership === 'rented' ? t('monthlyRate') : t('purchasePrice')}
+          value={c.price ? `${Number(c.price).toLocaleString()} ${c.currency || 'USD'}${c.ownership === 'rented' ? '/mo' : ''}` : '—'}
+          last
+        />
+      </Card>
+
+      {/* GPS */}
+      <LocationCard c={c} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
+    </View>
+  );
+}
+
+function CardHead({ icon, title, sub }: { icon: IconName; title: string; sub?: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={18} color={colors.navy700} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText weight="700" style={{ fontSize: 15.5, color: colors.ink }}>{title}</AppText>
+        {sub ? <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{sub}</AppText> : null}
+      </View>
+    </View>
+  );
+}
+
+function InfoRow({
+  icon,
+  label,
+  value,
+  valueNode,
+  accent,
+  last,
+}: {
+  icon: IconName;
+  label: string;
+  value?: string;
+  valueNode?: React.ReactNode;
+  accent?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16, borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.line }}>
+      <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: accent ? alpha(colors.accent, 0.13) : alpha(colors.ink, 0.05), alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon} size={17} color={accent ? colors.accent : colors.ink50} />
+      </View>
+      <AppText weight="500" style={{ flex: 1, fontSize: 13.5, color: colors.ink50 }}>{label}</AppText>
+      {valueNode || (
+        <AppText weight="600" style={{ fontSize: 14, color: colors.ink, textAlign: 'right', maxWidth: '58%' }}>
+          {value}
+        </AppText>
+      )}
+    </View>
   );
 }
 

@@ -226,7 +226,7 @@ function WeatherCard({ t }: { t: T }) {
     { label: '17:00', temp: 28, code: 3 },
     { label: '18:00', temp: 27, code: 3 },
   ];
-  const w = weather ?? { tempC: 29, feels: 32, humidity: 68, windKmh: 14, uv: 8, code: 2, city: 'Miami', hours: SAMPLE_HOURS };
+  const w = weather ?? { temp: 84, feels: 90, humidity: 68, wind: 9, uv: 8, code: 2, city: 'Miami', hours: SAMPLE_HOURS };
   const hours = w.hours.length ? w.hours : SAMPLE_HOURS;
   const cond = weatherCondition(w.code, es);
   const icon = weatherIcon(w.code);
@@ -240,10 +240,10 @@ function WeatherCard({ t }: { t: T }) {
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
                 <AppText serif weight="600" style={{ fontSize: 46, color: '#fff', lineHeight: 44 }}>
-                  {w.tempC}
+                  {w.temp}
                 </AppText>
                 <AppText weight="500" style={{ color: '#fff', fontSize: 20, marginTop: 3 }}>
-                  °C
+                  °F
                 </AppText>
               </View>
               <AppText weight="600" style={{ color: '#fff', fontSize: 14, marginTop: 6 }}>
@@ -262,7 +262,7 @@ function WeatherCard({ t }: { t: T }) {
           </View>
 
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' }}>
-            <Metric icon="wind" val={`${w.windKmh} km/h`} label={t('wind')} />
+            <Metric icon="wind" val={`${w.wind} mph`} label={t('wind')} />
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
             <Metric icon="droplet" val={`${w.humidity}%`} label={t('humidity')} />
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />

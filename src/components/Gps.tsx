@@ -323,28 +323,26 @@ export function ActivateSheet({
   open: boolean;
   onClose: () => void;
   t: T;
-  onSubmit: (assetId: string, serial: string) => Promise<void>;
+  onSubmit: (serial: string) => Promise<void>;
 }) {
-  const [assetId, setAssetId] = useState('');
   const [serial, setSerial] = useState('');
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   React.useEffect(() => {
     if (open) {
-      setAssetId('');
       setSerial('');
       setActive(true);
       setBusy(false);
     }
   }, [open]);
 
-  const valid = assetId.trim().length >= 4 && active;
+  const valid = serial.trim().length >= 4 && active;
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
     haptic('medium');
     try {
-      await onSubmit(assetId.trim(), serial.trim());
+      await onSubmit(serial.trim());
       haptic('success');
       onClose();
     } finally {
@@ -355,8 +353,7 @@ export function ActivateSheet({
   return (
     <Sheet open={open} onClose={onClose} title={t('activateGps')}>
       <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 16 }}>
-        <Field label={t('assetId')} icon="satellite" placeholder="SAM-0000-AZ" value={assetId} onChangeText={(v) => setAssetId(v.toUpperCase())} hint={t('assetIdHint')} autoCapitalize="characters" autoFocus />
-        <Field label={t('gatewaySerial')} icon="gps" placeholder="G4NS-5RG-FDB" value={serial} onChangeText={(v) => setSerial(v.toUpperCase())} hint={t('gatewayHint')} autoCapitalize="characters" />
+        <Field label={t('gatewaySerial')} icon="gps" placeholder="G4NS-5RG-FDB" value={serial} onChangeText={(v) => setSerial(v.toUpperCase())} hint={t('gatewayReqHint')} autoCapitalize="characters" autoFocus />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.bg, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 15 }}>
           <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: alpha(colors.success, 0.14), alignItems: 'center', justifyContent: 'center' }}>
             <Icon name="gps" size={18} color={colors.success} />

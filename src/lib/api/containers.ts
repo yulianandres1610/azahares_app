@@ -105,16 +105,25 @@ export function deleteContainer(id: string): Promise<unknown> {
   return apiFetch(`/containers/${id}`, { method: 'DELETE' });
 }
 
-// Activar / vincular GPS de un contenedor existente.
-export async function enableGps(
-  id: string,
-  assetId: string,
-  gatewaySerial?: string,
-): Promise<Container> {
-  const body: any = { gpsEnabled: true, samsaraAssetId: assetId };
-  if (gatewaySerial && gatewaySerial.trim()) body.samsaraGatewaySerial = gatewaySerial.trim();
+// Activar / vincular GPS de un contenedor existente. Igual que en la web:
+// se vincula con el SERIAL del gateway (el asset lo resuelve el backend).
+export async function enableGps(id: string, gatewaySerial: string): Promise<Container> {
+  const body = { gpsEnabled: true, samsaraGatewaySerial: gatewaySerial.trim() };
   const raw = await apiFetch<any>(`/containers/${id}`, { method: 'PATCH', body });
   return mapContainer(raw);
+}
+
+// Fotos de creación (registro) del contenedor.
+export interface ContainerImage {
+  id: string;
+  url: string | null;
+  fileName: string;
+}
+export async function listContainerImages(id: string): Promise<ContainerImage[]> {
+  const rows = await apiFetch<any[]>(`/containers/${id}/images`);
+  return Array.isArray(rows)
+    ? rows.map((r) => ({ id: r.id, url: r.signedUrl ?? null, fileName: r.fileName }))
+    : [];
 }
 
 // Historial de ubicaciones (recorrido) de un contenedor.
@@ -135,8 +144,7 @@ export interface NewContainerInput {
   ownership: string; // owned | rented
   price: number | null;
   gpsEnabled?: boolean;
-  gpsAssetId?: string;
-  gpsSerial?: string;
+  gpsSerial?: string; // serial del gateway (el backend resuelve el asset)
 }
 
 export async function createContainer(input: NewContainerInput): Promise<Container> {
@@ -153,10 +161,9 @@ export async function createContainer(input: NewContainerInput): Promise<Contain
     tareWeightUnit: input.tareUnit,
     ownership: input.ownership,
   };
-  if (input.gpsEnabled && input.gpsAssetId && input.gpsAssetId.trim()) {
+  if (input.gpsEnabled && input.gpsSerial && input.gpsSerial.trim()) {
     body.gpsEnabled = true;
-    body.samsaraAssetId = input.gpsAssetId.trim();
-    if (input.gpsSerial && input.gpsSerial.trim()) body.samsaraGatewaySerial = input.gpsSerial.trim();
+    body.samsaraGatewaySerial = input.gpsSerial.trim();
   }
   const price = input.price ?? 0;
   if (input.ownership === 'rented') {

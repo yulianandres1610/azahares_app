@@ -9,10 +9,10 @@ export interface WeatherHour {
   code: number;
 }
 export interface WeatherData {
-  tempC: number;
-  feels: number;
+  temp: number; // °F (Estados Unidos)
+  feels: number; // °F
   humidity: number;
-  windKmh: number;
+  wind: number; // mph
   uv: number;
   code: number;
   city: string;
@@ -84,7 +84,7 @@ export function useWeather(nowLabel = 'Now') {
         const url =
           `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
           `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,uv_index` +
-          `&hourly=temperature_2m,weather_code&forecast_hours=12&timezone=auto&wind_speed_unit=kmh`;
+          `&hourly=temperature_2m,weather_code&forecast_hours=12&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph`;
         const res = await fetch(url);
         const json: any = await res.json();
 
@@ -110,10 +110,10 @@ export function useWeather(nowLabel = 'Now') {
 
         if (mounted) {
           setData({
-            tempC: Math.round(cur.temperature_2m ?? 0),
+            temp: Math.round(cur.temperature_2m ?? 0),
             feels: Math.round(cur.apparent_temperature ?? cur.temperature_2m ?? 0),
             humidity: Math.round(cur.relative_humidity_2m ?? 0),
-            windKmh: Math.round(cur.wind_speed_10m ?? 0),
+            wind: Math.round(cur.wind_speed_10m ?? 0),
             uv: Math.round(cur.uv_index ?? 0),
             code: cur.weather_code ?? 0,
             city,

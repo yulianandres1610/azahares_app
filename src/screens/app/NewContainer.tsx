@@ -37,7 +37,6 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
     price: '',
     currency: 'USD',
     gpsEnabled: false,
-    gpsAssetId: '',
     gpsSerial: '',
     photos: [null, null, null, null] as (string | null)[],
   });
@@ -60,7 +59,7 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
       : step === 1
       ? !!(d.capacity && d.tare)
       : step === 2
-      ? !!String(d.price).trim() && (!d.gpsEnabled || d.gpsAssetId.trim().length >= 4)
+      ? !!String(d.price).trim() && (!d.gpsEnabled || d.gpsSerial.trim().length >= 4)
       : photoCount === 4;
 
   const next = () => {
@@ -86,7 +85,6 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
         ownership: d.ownership,
         price: d.price ? Number(d.price) : null,
         gpsEnabled: d.gpsEnabled,
-        gpsAssetId: d.gpsAssetId,
         gpsSerial: d.gpsSerial,
       });
       // subir las 4 fotos de registro
@@ -254,8 +252,7 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
               {d.gpsEnabled && (
                 <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 13 }}>
                   <View style={{ height: 1, backgroundColor: colors.line, marginHorizontal: -16, marginBottom: 3 }} />
-                  <Field label={t('assetId')} icon="satellite" placeholder="SAM-0000-AZ" value={d.gpsAssetId} onChangeText={(v) => set('gpsAssetId', v.toUpperCase())} hint={t('assetIdHint')} autoCapitalize="characters" />
-                  <Field label={t('gatewaySerial')} icon="gps" placeholder="G4NS-5RG-FDB" value={d.gpsSerial} onChangeText={(v) => set('gpsSerial', v.toUpperCase())} hint={t('gatewayHint')} autoCapitalize="characters" />
+                  <Field label={t('gatewaySerial')} icon="gps" placeholder="G4NS-5RG-FDB" value={d.gpsSerial} onChangeText={(v) => set('gpsSerial', v.toUpperCase())} hint={t('gatewayReqHint')} autoCapitalize="characters" />
                 </View>
               )}
             </View>
