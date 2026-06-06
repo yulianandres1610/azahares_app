@@ -4,7 +4,9 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   PressableProps,
   ScrollView,
@@ -203,6 +205,7 @@ export function Screen({
       contentContainerStyle={[pad, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
       onScroll={onScroll}
       scrollEventThrottle={16}
     >
@@ -607,7 +610,7 @@ export function Sheet({
   const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [600, 0] });
   return (
     <Modal transparent visible={mounted} animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable onPress={onClose} style={{ position: 'absolute', inset: 0 as any, backgroundColor: 'rgba(8,14,33,0.5)' }} />
         <Animated.View
           style={{
@@ -627,11 +630,11 @@ export function Sheet({
               {title}
             </AppText>
           ) : null}
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 8 }}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: 8 }}>
             {children}
           </ScrollView>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
