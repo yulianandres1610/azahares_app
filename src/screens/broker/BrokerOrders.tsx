@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
@@ -209,7 +210,7 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
         </View>
 
         <View style={{ padding: 16 }}>
-          {tab === 'detail' && <DetailTab o={o} idx={idx} />}
+          {tab === 'detail' && <DetailTab o={o} idx={idx} onChanged={() => { load(); refreshOrders(); refreshDashboard(); }} />}
           {tab === 'pagos' && <PagosTab o={o} idx={idx} onChanged={() => { load(); refreshOrders(); refreshDashboard(); }} />}
           {tab === 'tracking' && <TrackingTab o={o} />}
           {tab === 'log' && <LogTab o={o} />}
@@ -226,7 +227,10 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
 }
 
 // ── Detalle ────────────────────────────────────────────────────
-function DetailTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
+function DetailTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; onChanged: () => void }) {
+  const { showToast } = useApp();
+  const [editOpen, setEditOpen] = useState(false);
+  const editable = o.status === 'draft' || o.status === 'pending_client_approval';
   const docs: { label: string; icon: string }[] = [];
   if (idx >= 1) docs.push({ label: 'Cotización', icon: 'send' });
   if (idx >= 4) docs.push({ label: 'Oferta', icon: 'fileText' });
@@ -256,7 +260,7 @@ function DetailTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
       )}
 
       <Card pad={0} style={{ overflow: 'hidden' }}>
-        <Head icon="box" title={`Productos (${o.items.length})`} />
+        <Head icon="box" title={`Productos (${o.items.length})`} action={editable ? { icon: 'edit', label: 'Editar', onPress: () => { haptic('light'); setEditOpen(true); } } : undefined} />
         {o.items.map((it) => (
           <KV key={it.id} label={`${it.productName} · ${it.quantity.toLocaleString()} ${it.unit || ''}`} value={money(it.lineTotal)} />
         ))}
@@ -276,7 +280,82 @@ function DetailTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
         <KV label="Puerto destino" value={o.portOfDischarge || '—'} />
         <KV label="Plazo" value={o.deliveryTimeDays ? `${o.deliveryTimeDays} días` : '—'} last />
       </Card>
+
+      <EditContainersSheet open={editOpen} onClose={() => setEditOpen(false)} order={o}
+        onDone={() => { showToast('Contenedores actualizados', 'success'); onChanged(); }}
+        onError={(m) => showToast(m, 'error')} />
     </View>
+  );
+}
+
+// ── Hoja: editar contenedores/cantidades de la orden ───────────
+function EditContainersSheet({ open, onClose, order, onDone, onError }: { open: boolean; onClose: () => void; order: SalesOrderResponse; onDone: () => void; onError: (m: string) => void }) {
+  const { catalog } = useBroker();
+  type Row = { productId: string; name: string; unit: string | null; unitPrice: number; upc: number; containers: number };
+  const build = (): Row[] => order.items.map((it) => {
+    const cat = catalog?.items.find((c) => c.id === it.productId);
+    const upc = cat?.unitsPerContainer && cat.unitsPerContainer > 0 ? cat.unitsPerContainer : 24000;
+    return { productId: it.productId, name: it.productName, unit: it.unit, unitPrice: it.unitPrice, upc, containers: Math.max(1, Math.round(it.quantity / upc)) };
+  });
+  const [rows, setRows] = useState<Row[]>(build);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setRows(build()); setBusy(false); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
+
+  const setContainers = (i: number, v: number) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, containers: Math.max(1, v) } : r)));
+  const fobTotal = rows.reduce((a, r) => a + r.containers * r.upc * r.unitPrice, 0);
+
+  const save = async () => {
+    setBusy(true); haptic('medium');
+    try {
+      await brokerApi.updateSalesOrder(order.id, {
+        items: rows.map((r) => ({ productId: r.productId, quantity: r.containers * r.upc, unit: r.unit || undefined, unitPrice: r.unitPrice })),
+      });
+      haptic('success'); onClose(); onDone();
+    } catch (e: any) { setBusy(false); onError(e?.message || 'No se pudo actualizar la orden'); }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Editar contenedores">
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 14 }}>
+        {rows.map((r, i) => (
+          <Card key={r.productId} pad={16} style={{ gap: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+              <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}><Icon name="fuel" size={20} color={colors.navy700} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText weight="700" numberOfLines={1} style={{ fontSize: 14.5, color: colors.ink }}>{r.name}</AppText>
+                <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{r.upc.toLocaleString()} {r.unit || 'L'} × contenedor</AppText>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+              <Tap onPress={() => setContainers(i, r.containers - 1)} disabled={r.containers <= 1} hapticKind="light" style={{ width: 48, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: colors.line, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', opacity: r.containers <= 1 ? 0.4 : 1 }}>
+                <View style={{ width: 16, height: 2.6, borderRadius: 999, backgroundColor: colors.navy700 }} />
+              </Tap>
+              <View style={{ alignItems: 'center', minWidth: 70 }}>
+                <AppText serif weight="600" style={{ fontSize: 34, color: colors.ink, lineHeight: 36 }}>{r.containers}</AppText>
+                <AppText weight="600" style={{ fontSize: 10.5, color: colors.ink40 }}>contenedores</AppText>
+              </View>
+              <Tap onPress={() => setContainers(i, r.containers + 1)} hapticKind="light" style={{ width: 48, height: 48, borderRadius: 14, overflow: 'hidden' }}>
+                <LinearGradient colors={gradients.navy} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={22} color="#fff" strokeWidth={2.4} /></LinearGradient>
+              </Tap>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 }}>
+              <AppText style={{ fontSize: 12.5, color: colors.ink50 }}>{(r.containers * r.upc).toLocaleString()} {r.unit || 'L'} · ${r.unitPrice.toFixed(2)}/{r.unit || 'u'}</AppText>
+              <AppText serif weight="700" style={{ fontSize: 15, color: colors.ink }}>{money(Math.round(r.containers * r.upc * r.unitPrice))}</AppText>
+            </View>
+          </Card>
+        ))}
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 }}>
+          <AppText weight="600" style={{ fontSize: 13, color: colors.ink60 }}>Nuevo subtotal FOB</AppText>
+          <AppText serif weight="700" style={{ fontSize: 20, color: colors.ink }}>{money(Math.round(fobTotal))}</AppText>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingHorizontal: 2 }}>
+          <Icon name="info" size={16} color={colors.accent} />
+          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>Los cargos navieros y el Total CIF se recalculan en el servidor al guardar.</AppText>
+        </View>
+        <Button variant="primary" icon="check" loading={busy} onPress={save}>Guardar cambios</Button>
+      </View>
+    </Sheet>
   );
 }
 
@@ -327,13 +406,18 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
   const pct = o.totalCif ? Math.min(100, Math.round((verified / o.totalCif) * 100)) : 0;
   const pays = sum?.payments || [];
 
+  const openInApp = async (url: string) => {
+    // navegador in-app (SFSafariViewController) — no sale de la app
+    try { await WebBrowser.openBrowserAsync(url, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET, controlsColor: colors.navy700 }); }
+    catch { await Linking.openURL(url); }
+  };
   const viewProof = async (p: PaymentRow) => {
     haptic('light');
     // 1) URL directa del comprobante del pago (pagos parciales)
     const direct = p.proofs?.find((x) => x.url)?.url || (p.proofUrl && p.proofUrl.startsWith('http') ? p.proofUrl : null);
-    if (direct) { try { await Linking.openURL(direct); return; } catch { /* sigue al fallback */ } }
+    if (direct) { await openInApp(direct); return; }
     // 2) fallback: comprobante único de la orden (firma on-demand)
-    try { const { url } = await brokerApi.getPaymentProofDownloadUrl(o.id); if (url) await Linking.openURL(url); else showToast('Comprobante no disponible', 'warn'); }
+    try { const { url } = await brokerApi.getPaymentProofDownloadUrl(o.id); if (url) await openInApp(url); else showToast('Comprobante no disponible', 'warn'); }
     catch (e: any) { showToast(e?.message || 'No se pudo abrir el comprobante', 'error'); }
   };
 
@@ -697,11 +781,17 @@ function LogTab({ o }: { o: SalesOrderResponse }) {
   );
 }
 
-function Head({ icon, title }: { icon: string; title: string }) {
+function Head({ icon, title, action }: { icon: string; title: string; action?: { icon: string; label: string; onPress: () => void } }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 }}>
       <View style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}><Icon name={icon as any} size={17} color={colors.navy700} /></View>
       <AppText weight="700" style={{ flex: 1, fontSize: 14.5, color: colors.ink }}>{title}</AppText>
+      {action && (
+        <Tap onPress={action.onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: alpha(colors.navy500, 0.12), borderRadius: 999, paddingVertical: 6, paddingHorizontal: 11 }}>
+          <Icon name={action.icon as any} size={14} color={colors.navy700} />
+          <AppText weight="600" style={{ fontSize: 12.5, color: colors.navy700 }}>{action.label}</AppText>
+        </Tap>
+      )}
     </View>
   );
 }

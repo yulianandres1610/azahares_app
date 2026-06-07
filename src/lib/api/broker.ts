@@ -283,6 +283,11 @@ export const listSalesOrders = () => apiFetch<SalesOrderListItem[]>('/sales-orde
 export const getSalesOrder = (id: string) => apiFetch<SalesOrderResponse>(`/sales-orders/${id}`);
 export const createSalesOrder = (payload: CreateSalesOrderPayload) =>
   apiFetch<SalesOrderResponse>('/sales-orders', { method: 'POST', body: payload });
+// Editar la orden (solo draft / pending_client_approval). items recompone líneas.
+export const updateSalesOrder = (
+  id: string,
+  payload: { items?: CreateSalesOrderItemInput[]; fleteMaritimo?: number; thcd?: number; ispd?: number; seguro?: number; notes?: string },
+) => apiFetch<SalesOrderResponse>(`/sales-orders/${id}`, { method: 'PATCH', body: payload });
 export const sendCotizacion = (id: string, options: { recipients?: string[]; sendEmail?: boolean } = {}) =>
   apiFetch<SalesOrderResponse>(`/sales-orders/${id}/send-cotizacion`, { method: 'POST', body: options });
 export const sendQuote = (id: string, options: { recipients?: string[]; sendEmail?: boolean } = {}) =>
