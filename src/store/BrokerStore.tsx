@@ -16,6 +16,15 @@ export * as brokerApi from '../lib/api/broker';
 export const money = (n: number, dec?: boolean) =>
   '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: dec ? 2 : 0, maximumFractionDigits: dec ? 2 : 0 });
 
+// Capacidad máxima por contenedor 20 ft de combustible: 6500 gal ó 25 000 L
+// (≈157 bbl). Se usa para validar/limitar el volumen por contenedor.
+export function maxPerContainer(unit: string): number {
+  const u = (unit || '').toLowerCase();
+  if (u.includes('gal')) return 6500;
+  if (u.includes('bbl') || u.includes('barr')) return 157;
+  return 25000; // litros por defecto
+}
+
 // ── estados de cliente (clave de diseño ← estado backend) ──────
 export type BkClientStatusKey = 'unapproved' | 'review' | 'approved' | 'rejected' | 'suspended';
 export const clientStatusKey = (s: ClientStatus): BkClientStatusKey =>
@@ -109,9 +118,11 @@ function mapCatalog(cat: api.SalesCatalog, sparks: Record<string, { spark: numbe
       const sp = sparks[it.id] || { spark: [], change: 0 };
       const scales = it.containerScales || [];
       const tiers: UICatalogTier[] = scales.map((s) => ({ label: `${s.containers}+ cont.`, price: s.fobUnitPrice, containers: s.containers }));
-      const perContainer = it.innerQuantity && it.innerQuantity > 0
+      const rawPerContainer = it.innerQuantity && it.innerQuantity > 0
         ? it.innerQuantity
         : scales[0] && scales[0].containers > 0 ? Math.round(scales[0].totalLiters / scales[0].containers) : 24000;
+      // tope de capacidad por contenedor 20 ft de combustible
+      const perContainer = Math.min(rawPerContainer, maxPerContainer(it.unit));
       return {
         id: it.id, name: it.name, code: it.sku, unit: it.unit, price: it.basicUnitPrice,
         change: sp.change, icon: iconForCatalog(it),

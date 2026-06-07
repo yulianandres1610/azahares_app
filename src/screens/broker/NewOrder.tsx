@@ -8,7 +8,7 @@ import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/to
 import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, Field, Screen, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { money, useBroker, brokerApi, type UICatalogItem } from '../../store/BrokerStore';
+import { money, maxPerContainer, useBroker, brokerApi, type UICatalogItem } from '../../store/BrokerStore';
 import { CheckMark, FadeUp, WizardHeader } from './ui';
 
 export function NewOrder({ clientId: initialClient, onClose }: { clientId?: string; onClose: () => void }) {
@@ -122,9 +122,9 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                   <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name={(product?.icon as any) || 'fuel'} size={21} color={colors.navy700} />
                   </View>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <AppText weight="700" style={{ fontSize: 15, color: colors.ink }}>{product?.name || 'Producto'} · iso-tank</AppText>
-                    <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{(product?.unitsPerContainer || 24000).toLocaleString()} {product?.unit || 'L'} por contenedor</AppText>
+                    <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{(product?.unitsPerContainer || 24000).toLocaleString()} {product?.unit || 'L'}/cont. · máx {maxPerContainer(product?.unit || 'L').toLocaleString()} {product?.unit || 'L'}</AppText>
                   </View>
                 </View>
                 <View>

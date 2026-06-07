@@ -11,7 +11,7 @@ import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, Chip, Field, IconButton, Screen, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { BK_ORDER_STATUS, money, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
+import { BK_ORDER_STATUS, money, maxPerContainer, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
 import { putSigned } from '../../lib/api/containers';
 import type { AuditLog, OrderPaymentsSummary, PaymentRow, PublicTrackingResponse, SalesOrderResponse, SalesOrderStatus, TrackingStep } from '../../lib/api/broker';
 import { FadeUp, Hero, HeroStat, OrderBadge, Pipeline, useBkNav, useCountUp } from './ui';
@@ -294,7 +294,8 @@ function EditContainersSheet({ open, onClose, order, onDone, onError }: { open: 
   type Row = { productId: string; name: string; unit: string | null; unitPrice: number; upc: number; containers: number };
   const build = (): Row[] => order.items.map((it) => {
     const cat = catalog?.items.find((c) => c.id === it.productId);
-    const upc = cat?.unitsPerContainer && cat.unitsPerContainer > 0 ? cat.unitsPerContainer : 24000;
+    const base = cat?.unitsPerContainer && cat.unitsPerContainer > 0 ? cat.unitsPerContainer : 24000;
+    const upc = Math.min(base, maxPerContainer(it.unit || 'L')); // tope por contenedor 20 ft
     return { productId: it.productId, name: it.productName, unit: it.unit, unitPrice: it.unitPrice, upc, containers: Math.max(1, Math.round(it.quantity / upc)) };
   });
   const [rows, setRows] = useState<Row[]>(build);
@@ -323,7 +324,7 @@ function EditContainersSheet({ open, onClose, order, onDone, onError }: { open: 
               <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}><Icon name="fuel" size={20} color={colors.navy700} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <AppText weight="700" numberOfLines={1} style={{ fontSize: 14.5, color: colors.ink }}>{r.name}</AppText>
-                <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{r.upc.toLocaleString()} {r.unit || 'L'} × contenedor</AppText>
+                <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{r.upc.toLocaleString()} {r.unit || 'L'}/cont. · máx {maxPerContainer(r.unit || 'L').toLocaleString()} {r.unit || 'L'}</AppText>
               </View>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
