@@ -10,9 +10,10 @@ import { alpha, colors, gradients } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
 import { AppText, CheckMark } from '../../components/ui';
 import {
-  BK_CLIENT_STATUS, BK_ORDER_STATUS, BK_USER_STATUS, BK_PIPELINE,
-  type BkOrderState,
+  BK_CLIENT_STATUS, BK_ORDER_STATUS, BK_USER_STATUS, orderIdx,
+  type BkClientStatusKey, type BkUserStatusKey,
 } from '../../store/BrokerStore';
+import type { SalesOrderStatus } from '../../lib/api/broker';
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -96,13 +97,13 @@ function Badge({ color, label, size = 'md' }: { color: string; label: string; si
     </View>
   );
 }
-export function ClientBadge({ status, size }: { status: keyof typeof BK_CLIENT_STATUS; size?: 'sm' | 'md' }) {
+export function ClientBadge({ status, size }: { status: BkClientStatusKey; size?: 'sm' | 'md' }) {
   const m = BK_CLIENT_STATUS[status]; return <Badge color={m.color} label={m.label} size={size} />;
 }
-export function OrderBadge({ status, size }: { status: BkOrderState; size?: 'sm' | 'md' }) {
+export function OrderBadge({ status, size }: { status: SalesOrderStatus; size?: 'sm' | 'md' }) {
   const m = BK_ORDER_STATUS[status]; return <Badge color={m.color} label={m.label} size={size} />;
 }
-export function UserBadge({ status, size }: { status: keyof typeof BK_USER_STATUS; size?: 'sm' | 'md' }) {
+export function UserBadge({ status, size }: { status: BkUserStatusKey; size?: 'sm' | 'md' }) {
   const m = BK_USER_STATUS[status]; return <Badge color={m.color} label={m.label} size={size} />;
 }
 
@@ -114,8 +115,8 @@ const PHASES = [
   { key: 'Logística', icon: 'ship', end: 10 },
 ] as const;
 
-export function Pipeline({ state }: { state: BkOrderState }) {
-  const idx = BK_PIPELINE.indexOf(state);
+export function Pipeline({ state }: { state: SalesOrderStatus }) {
+  const idx = Math.max(0, orderIdx(state));
   const curPhase = PHASES.findIndex((p) => idx <= p.end);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 }}>

@@ -1,35 +1,29 @@
-// Dashboard del broker: ticker de precios en vivo, catálogo del día,
-// KPIs, accesos rápidos y resumen de operación. Portado de app/broker-home.jsx.
+// Dashboard del broker — datos REALES: /dashboard/broker-summary +
+// /products/sales-catalog + price-history. Ticker, catálogo, KPIs, resumen.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, ScrollView, View } from 'react-native';
+import { Animated, Easing, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinear, Path, Stop } from 'react-native-svg';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
 import { AppText, Avatar, Button, IconButton, Ring, Screen, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { bkCounts, money, type BkProduct } from '../../store/BrokerStore';
-import { useBroker } from '../../store/BrokerStore';
+import { money, summaryCounts, useBroker, type UICatalogItem } from '../../store/BrokerStore';
 import { FadeUp, Hero, saludoES, useBkNav, useCountUp } from './ui';
 
 function changeColor(ch: number) { return ch > 0 ? colors.success : ch < 0 ? colors.error : colors.ink40; }
 
-// ── sparkline ──────────────────────────────────────────────────
 function Spark({ data, color, w = 138, h = 30 }: { data: number[]; color: string; w?: number; h?: number }) {
-  const min = Math.min(...data); const max = Math.max(...data); const span = max - min || 1;
-  const pts = data.map((v, i) => [(i / (data.length - 1)) * w, h - ((v - min) / span) * (h - 4) - 2]);
+  const safe = data.length >= 2 ? data : [data[0] ?? 0, data[0] ?? 0];
+  const min = Math.min(...safe); const max = Math.max(...safe); const span = max - min || 1;
+  const pts = safe.map((v, i) => [(i / (safe.length - 1)) * w, h - ((v - min) / span) * (h - 4) - 2]);
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
   const area = `${d} L${w} ${h} L0 ${h} Z`;
   const last = pts[pts.length - 1];
-  const id = useRef('sp' + Math.round(w + h + data[0] * 1000)).current;
+  const id = useRef('sp' + Math.round(w + h + (data[0] ?? 1) * 1000)).current;
   return (
     <Svg width={w} height={h}>
-      <Defs>
-        <SvgLinear id={id} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={color} stopOpacity={0.28} />
-          <Stop offset="1" stopColor={color} stopOpacity={0} />
-        </SvgLinear>
-      </Defs>
+      <Defs><SvgLinear id={id} x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor={color} stopOpacity={0.28} /><Stop offset="1" stopColor={color} stopOpacity={0} /></SvgLinear></Defs>
       <Path d={area} fill={`url(#${id})`} />
       <Path d={d} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       <Circle cx={last[0]} cy={last[1]} r={2.6} fill={color} />
@@ -39,23 +33,17 @@ function Spark({ data, color, w = 138, h = 30 }: { data: number[]; color: string
 
 export function BrokerHome() {
   const { me, notifications } = useApp();
-  const [s] = useBroker();
+  const { dashboard, catalog, orders, refreshAll } = useBroker();
   const nav = useBkNav();
-  const c = bkCounts(s);
-  const cat = s.catalog;
+  const c = summaryCounts(dashboard);
   const [anim, setAnim] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [priceItem, setPriceItem] = useState<BkProduct | null>(null);
-  const spin = useRef(new Animated.Value(0)).current;
+  const [priceItem, setPriceItem] = useState<UICatalogItem | null>(null);
   useEffect(() => { const r = setTimeout(() => setAnim(true), 60); return () => clearTimeout(r); }, []);
 
   const firstName = (me?.fullName || me?.email || '').split(' ')[0] || '';
-  const refresh = () => {
-    setRefreshing(true); haptic('light');
-    spin.setValue(0);
-    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 800, easing: Easing.linear, useNativeDriver: true })).start();
-    setTimeout(() => { setRefreshing(false); spin.stopAnimation(); haptic('success'); }, 1100);
-  };
+  const items = catalog?.items || [];
+  const onRefresh = async () => { setRefreshing(true); haptic('light'); await refreshAll(); setRefreshing(false); };
 
   const kpis = [
     { key: 'clients', icon: 'users', label: 'Clientes activos', value: c.clientsActive, sub: `${c.clientsTotal} en total`, tone: colors.accent, tab: 'clients' as const },
@@ -63,13 +51,11 @@ export function BrokerHome() {
     { key: 'invoiced', icon: 'receipt', label: 'Facturas emitidas', value: c.invoiced, sub: money(c.invoicedSum), tone: colors.amber, tab: 'orders' as const },
     { key: 'paid', icon: 'checkCircle', label: 'Facturas pagadas', value: c.paid, sub: money(c.paidSum), tone: colors.success, tab: 'orders' as const },
   ];
-  const totalOperado = s.orders.reduce((a, o) => a + o.cif, 0);
 
   return (
     <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
         <Hero padBottom={0} padTopExtra={6}>
-          {/* saludo + acciones */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText style={{ color: 'rgba(255,255,255,0.62)', fontSize: 13.5 }}>{saludoES()},</AppText>
@@ -77,39 +63,43 @@ export function BrokerHome() {
             </View>
             <View>
               <IconButton name="bell" variant="glassDark" onPress={() => nav.openOverlay({ type: 'notifs' })} />
-              {s.notifs.some((n) => !n.read) && <View style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, borderRadius: 999, backgroundColor: colors.error, borderWidth: 2, borderColor: colors.navy900 }} />}
+              {notifications.some((n) => !n.read) && <View style={{ position: 'absolute', top: 9, right: 10, width: 8, height: 8, borderRadius: 999, backgroundColor: colors.error, borderWidth: 2, borderColor: colors.navy900 }} />}
             </View>
             <Tap onPress={() => nav.setTab('profile')}>
               <Avatar name={me?.fullName} src={me?.avatarUrl} size={42} />
             </Tap>
           </View>
 
-          <HeroTotal total={totalOperado} paid={c.paidSum} active={c.quotesSum - c.paidSum} run={anim} />
-          <Ticker items={cat.items} />
+          <HeroTotal total={c.totalSold} paid={c.paidSum} active={Math.max(0, c.quotesSum - c.paidSum)} run={anim} />
+          {items.length > 0 && <Ticker items={items} />}
         </Hero>
 
-        {/* catálogo del día */}
         <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View>
             <AppText serif weight="600" style={{ fontSize: 19, color: colors.ink }}>Catálogo del día</AppText>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
               <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: colors.success }} />
-              <AppText weight="500" style={{ fontSize: 11.5, color: colors.ink50 }}>Precios base Azahares · {cat.updated}</AppText>
+              <AppText weight="500" style={{ fontSize: 11.5, color: colors.ink50 }}>Precios base Azahares{catalog?.updated ? ` · ${catalog.updated}` : ''}</AppText>
             </View>
           </View>
-          <Tap onPress={refresh} style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.sm }}>
-            <Animated.View style={{ transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-              <Icon name="refresh" size={18} color={colors.navy700} />
-            </Animated.View>
+          <Tap onPress={() => nav.openOverlay({ type: 'catalog' })} style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.sm }}>
+            <Icon name="fileText" size={18} color={colors.navy700} />
           </Tap>
         </View>
 
-        {/* tarjetas de precio (scroll horizontal) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingVertical: 2 }}>
-          {cat.items.map((p, i) => <PriceCard key={p.id} p={p} i={i} onPress={() => { haptic('light'); setPriceItem(p); }} />)}
-        </ScrollView>
+        {items.length === 0 ? (
+          <View style={{ paddingHorizontal: 16 }}>
+            <View style={{ height: 150, borderRadius: radius.lg, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadows.sm }}>
+              <Icon name="fuel" size={32} color={colors.ink30} />
+              <AppText style={{ fontSize: 13, color: colors.ink40, marginTop: 10 }}>Catálogo no disponible</AppText>
+            </View>
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingVertical: 2 }}>
+            {items.map((p, i) => <PriceCard key={p.id} p={p} i={i} onPress={() => { haptic('light'); setPriceItem(p); }} />)}
+          </ScrollView>
+        )}
 
-        {/* KPIs */}
         <View style={{ padding: 16, paddingBottom: 0, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {kpis.map((k, i) => (
             <FadeUp key={k.key} delay={i * 50} style={{ width: '47.6%', flexGrow: 1 }}>
@@ -128,7 +118,6 @@ export function BrokerHome() {
           ))}
         </View>
 
-        {/* accesos rápidos */}
         <View style={{ paddingHorizontal: 20, paddingTop: 22, paddingBottom: 10 }}>
           <AppText serif weight="600" style={{ fontSize: 18, color: colors.ink }}>Accesos rápidos</AppText>
         </View>
@@ -138,7 +127,6 @@ export function BrokerHome() {
           <QuickAction icon="wallet" label="Mi wallet" onPress={() => nav.setTab('wallet')} />
         </View>
 
-        {/* resumen de operación */}
         <View style={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <AppText serif weight="600" style={{ fontSize: 18, color: colors.ink }}>Resumen de operación</AppText>
           <Tap onPress={() => nav.setTab('orders')} hapticKind="select" style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
@@ -153,7 +141,7 @@ export function BrokerHome() {
             </Ring>
             <View style={{ flex: 1 }}>
               <AppText weight="700" style={{ fontSize: 13.5, color: colors.ink }}>Conversión</AppText>
-              <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>{c.paid} de {s.orders.length} pagadas</AppText>
+              <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>{c.paid} de {dashboard?.salesOrders.total ?? orders.length} pagadas</AppText>
             </View>
           </View>
           <View style={{ flex: 1, gap: 12 }}>
@@ -168,24 +156,20 @@ export function BrokerHome() {
   );
 }
 
-// ── total operado (count-up + barra split) ─────────────────────
 function HeroTotal({ total, paid, active, run }: { total: number; paid: number; active: number; run: boolean }) {
   const v = useCountUp(total, run);
   const barPaid = useRef(new Animated.Value(0)).current;
   const barActive = useRef(new Animated.Value(0)).current;
+  const denom = paid + active || 1;
   useEffect(() => {
     if (!run) return;
-    Animated.timing(barPaid, { toValue: total ? (paid / total) * 100 : 0, duration: 1200, useNativeDriver: false }).start();
-    Animated.timing(barActive, { toValue: total ? (active / total) * 100 : 0, duration: 1200, delay: 150, useNativeDriver: false }).start();
-  }, [run, total, paid, active, barPaid, barActive]);
+    Animated.timing(barPaid, { toValue: (paid / denom) * 100, duration: 1200, useNativeDriver: false }).start();
+    Animated.timing(barActive, { toValue: (active / denom) * 100, duration: 1200, delay: 150, useNativeDriver: false }).start();
+  }, [run, paid, active, denom, barPaid, barActive]);
   return (
     <View style={{ marginTop: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
         <AppText weight="700" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11.5, letterSpacing: 1 }}>TOTAL VENDIDO</AppText>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(52,211,153,0.16)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 }}>
-          <Icon name="trendUp" size={11} color="#34d399" />
-          <AppText weight="700" style={{ color: '#34d399', fontSize: 11 }}>+12.4%</AppText>
-        </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2, marginTop: 6 }}>
         <AppText serif weight="600" style={{ fontSize: 26, color: 'rgba(255,255,255,0.7)' }}>$</AppText>
@@ -217,8 +201,7 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
   );
 }
 
-// ── ticker (marquee) ───────────────────────────────────────────
-function Ticker({ items }: { items: BkProduct[] }) {
+function Ticker({ items }: { items: UICatalogItem[] }) {
   const x = useRef(new Animated.Value(0)).current;
   const [rowW, setRowW] = useState(0);
   useEffect(() => {
@@ -228,21 +211,18 @@ function Ticker({ items }: { items: BkProduct[] }) {
     loop.start();
     return () => loop.stop();
   }, [rowW, x]);
-  const row = [...items, ...items];
   return (
     <View style={{ marginTop: 18, marginHorizontal: -16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
       <Animated.View style={{ flexDirection: 'row', transform: [{ translateX: x }] }}>
         <View style={{ flexDirection: 'row' }} onLayout={(e) => setRowW(e.nativeEvent.layout.width)}>
           {items.map((p, i) => <TickItem key={'a' + i} p={p} />)}
         </View>
-        <View style={{ flexDirection: 'row' }}>
-          {items.map((p, i) => <TickItem key={'b' + i} p={p} />)}
-        </View>
+        <View style={{ flexDirection: 'row' }}>{items.map((p, i) => <TickItem key={'b' + i} p={p} />)}</View>
       </Animated.View>
     </View>
   );
 }
-function TickItem({ p }: { p: BkProduct }) {
+function TickItem({ p }: { p: UICatalogItem }) {
   const col = p.change > 0 ? '#34d399' : p.change < 0 ? '#fb7185' : 'rgba(255,255,255,0.5)';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13 }}>
@@ -256,8 +236,7 @@ function TickItem({ p }: { p: BkProduct }) {
   );
 }
 
-// ── tarjeta de precio del catálogo ─────────────────────────────
-function PriceCard({ p, i, onPress }: { p: BkProduct; i: number; onPress: () => void }) {
+function PriceCard({ p, i, onPress }: { p: UICatalogItem; i: number; onPress: () => void }) {
   const col = changeColor(p.change);
   const best = Math.min(...p.tiers.map((t) => t.price));
   return (
@@ -273,7 +252,7 @@ function PriceCard({ p, i, onPress }: { p: BkProduct; i: number; onPress: () => 
           </View>
         </View>
         <View>
-          <AppText weight="700" style={{ fontSize: 14.5, color: colors.ink }}>{p.name}</AppText>
+          <AppText weight="700" numberOfLines={1} style={{ fontSize: 14.5, color: colors.ink }}>{p.name}</AppText>
           <AppText weight="600" style={{ fontSize: 11, color: colors.ink40, marginTop: 1 }}>{p.code}</AppText>
         </View>
         <Spark data={p.spark} color={col} />
@@ -286,10 +265,12 @@ function PriceCard({ p, i, onPress }: { p: BkProduct; i: number; onPress: () => 
             <Icon name="layers" size={14} color="#fff" />
           </LinearGradient>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Icon name="layers" size={12} color={colors.accent} />
-          <AppText weight="600" style={{ fontSize: 11, color: colors.accent }}>Volumen desde ${best.toFixed(2)}</AppText>
-        </View>
+        {p.tiers.length > 1 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Icon name="layers" size={12} color={colors.accent} />
+            <AppText weight="600" style={{ fontSize: 11, color: colors.accent }}>Volumen desde ${best.toFixed(2)}</AppText>
+          </View>
+        )}
       </Tap>
     </FadeUp>
   );
@@ -322,9 +303,8 @@ function MiniStat({ icon, label, value, tone = colors.navy700, onPress }: { icon
   );
 }
 
-// ── hoja de precios por volumen ────────────────────────────────
-function PriceSheet({ p, onClose, onQuote }: { p: BkProduct | null; onClose: () => void; onQuote: () => void }) {
-  const [last, setLast] = useState<BkProduct | null>(p);
+function PriceSheet({ p, onClose, onQuote }: { p: UICatalogItem | null; onClose: () => void; onQuote: () => void }) {
+  const [last, setLast] = useState<UICatalogItem | null>(p);
   useEffect(() => { if (p) setLast(p); }, [p]);
   const it = p || last;
   if (!it) return <Sheet open={false} onClose={onClose} />;
@@ -370,11 +350,9 @@ function PriceSheet({ p, onClose, onQuote }: { p: BkProduct | null; onClose: () 
                   <AppText style={{ fontSize: 11.5, color: colors.ink50, marginTop: 1 }}>{save > 0 ? `Ahorro ${save}%` : 'Precio base'}</AppText>
                 </View>
                 {isBest && <View style={{ backgroundColor: alpha(colors.success, 0.16), paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}><AppText weight="800" style={{ fontSize: 10, color: colors.success }}>MEJOR</AppText></View>}
-                <View style={{ alignItems: 'flex-end' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                    <AppText serif weight="700" style={{ fontSize: 18, color: isBest ? colors.success : colors.ink }}>${t.price.toFixed(2)}</AppText>
-                    <AppText style={{ fontSize: 11, color: colors.ink40 }}>/{it.unit}</AppText>
-                  </View>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                  <AppText serif weight="700" style={{ fontSize: 18, color: isBest ? colors.success : colors.ink }}>${t.price.toFixed(2)}</AppText>
+                  <AppText style={{ fontSize: 11, color: colors.ink40 }}>/{it.unit}</AppText>
                 </View>
               </View>
             );
@@ -383,7 +361,7 @@ function PriceSheet({ p, onClose, onQuote }: { p: BkProduct | null; onClose: () 
 
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginVertical: 14, paddingHorizontal: 2 }}>
           <Icon name="info" size={16} color={colors.accent} />
-          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>Cada contenedor iso-tank ≈ 24,000 {it.unit === 'bbl' ? 'L' : 'gal'}. El precio final se calcula sobre el volumen total de la orden.</AppText>
+          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>El precio por volumen aplica según la cantidad de contenedores de la orden. El total se calcula sobre el volumen pedido.</AppText>
         </View>
 
         <Button variant="primary" icon="send" onPress={onQuote}>Cotizar {it.name}</Button>

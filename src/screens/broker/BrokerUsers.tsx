@@ -1,7 +1,6 @@
-// Equipo (solo owner): lista de usuarios + alta de usuario.
-// Portado de app/broker-users.jsx y el NewUser de app/broker-app.jsx.
+// Equipo (solo owner): usuarios REALES (GET /users) + alta (POST /users).
 import React, { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, RadialGradient as SvgRadial, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,16 +8,24 @@ import { alpha, colors, gradients, radius } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
 import { AppText, Avatar, Button, Card, Field, IconButton, Screen, Slider, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { useBroker } from '../../store/BrokerStore';
+import { useBroker, brokerApi } from '../../store/BrokerStore';
 import { CountryCode, FadeUp, Hero, HeroStat, UserBadge, useBkNav } from './ui';
+
+function genPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let p = '';
+  for (let i = 0; i < 12; i++) p += chars[Math.floor((i * 9301 + 49297 + Date.now()) % chars.length)];
+  return 'Az' + p + '!9';
+}
 
 export function BrokerUsers() {
   const { me, showToast } = useApp();
-  const [s] = useBroker();
+  const { users, loading, refreshUsers } = useBroker();
   const nav = useBkNav();
   const owner = me?.role === 'broker_owner';
   const [q, setQ] = useState('');
-  const list = s.users.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(q.toLowerCase()));
+  const [refreshing, setRefreshing] = useState(false);
+  const list = users.filter((u) => `${u.fullName || ''} ${u.email}`.toLowerCase().includes(q.toLowerCase()));
 
   if (!owner) {
     return (
@@ -33,10 +40,12 @@ export function BrokerUsers() {
     );
   }
 
-  const active = s.users.filter((u) => u.status === 'active').length;
+  const active = users.filter((u) => u.status === 'active').length;
+  const onRefresh = async () => { setRefreshing(true); await refreshUsers(); setRefreshing(false); };
+
   return (
     <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
         <Hero>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <AppText serif weight="600" style={{ fontSize: 26, color: '#fff' }}>Equipo</AppText>
@@ -44,8 +53,8 @@ export function BrokerUsers() {
           </View>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
             <HeroStat value={active} label="Activos" />
-            <HeroStat value={s.users.length} label="Usuarios" />
-            <HeroStat value={s.users.filter((u) => u.status === 'invited').length} label="Invitados" tone={colors.amber} />
+            <HeroStat value={users.length} label="Usuarios" />
+            <HeroStat value={users.filter((u) => u.status === 'invited').length} label="Invitados" tone={colors.amber} />
           </View>
         </Hero>
 
@@ -53,34 +62,37 @@ export function BrokerUsers() {
           <Field icon="search" placeholder="Buscar usuario" value={q} onChangeText={setQ} right={q ? <IconButton name="x" variant="plain" iconSize={16} size={32} onPress={() => setQ('')} /> : undefined} />
         </View>
 
-        <View style={{ paddingHorizontal: 16, paddingTop: 14, gap: 11 }}>
-          {list.map((u, i) => (
-            <FadeUp key={u.id} delay={i * 40}>
-              <Card pad={14} onPress={() => showToast(u.name, 'info')}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
-                  <Avatar name={u.name} size={46} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <AppText weight="700" numberOfLines={1} style={{ fontSize: 14.5, color: colors.ink }}>{u.name}</AppText>
-                    <AppText numberOfLines={1} style={{ fontSize: 12.5, color: colors.ink50, marginTop: 2 }}>{u.email}</AppText>
+        {loading && users.length === 0 ? (
+          <View style={{ paddingTop: 50, alignItems: 'center' }}><ActivityIndicator color={colors.navy700} /></View>
+        ) : (
+          <View style={{ paddingHorizontal: 16, paddingTop: 14, gap: 11 }}>
+            {list.map((u, i) => (
+              <FadeUp key={u.id} delay={i * 40}>
+                <Card pad={14} onPress={() => showToast(u.fullName || u.email, 'info')}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
+                    <Avatar name={u.fullName || u.email} src={u.avatarUrl} size={46} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText weight="700" numberOfLines={1} style={{ fontSize: 14.5, color: colors.ink }}>{u.fullName || u.email}</AppText>
+                      <AppText numberOfLines={1} style={{ fontSize: 12.5, color: colors.ink50, marginTop: 2 }}>{u.email}</AppText>
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <UserBadge status={u.status} size="sm" />
+                      <AppText weight="600" style={{ fontSize: 11, color: colors.ink40 }}>{u.role === 'broker_owner' ? 'Owner' : 'Seller'}</AppText>
+                    </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                    <UserBadge status={u.status} size="sm" />
-                    <AppText weight="600" style={{ fontSize: 11, color: colors.ink40 }}>{u.role === 'broker_owner' ? 'Owner' : 'Seller'}</AppText>
-                  </View>
-                </View>
-              </Card>
-            </FadeUp>
-          ))}
-        </View>
+                </Card>
+              </FadeUp>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </Screen>
   );
 }
 
-// ══ Nuevo usuario ══════════════════════════════════════════════
 export function NewUser({ onClose }: { onClose: () => void }) {
-  const [, dispatch] = useBroker();
-  const { showToast } = useApp();
+  const { me, showToast } = useApp();
+  const { refreshUsers } = useBroker();
   const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -88,14 +100,30 @@ export function NewUser({ onClose }: { onClose: () => void }) {
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<'broker_seller' | 'broker_owner'>('broker_seller');
   const [commission, setCommission] = useState(4);
-  const valid = name.trim() && /\S+@\S+\.\S+/.test(email) && phone.replace(/\D/g, '').length >= 6;
+  const [busy, setBusy] = useState(false);
+  const valid = !!(name.trim() && /\S+@\S+\.\S+/.test(email) && phone.replace(/\D/g, '').length >= 6) && !busy;
   const initials = (name.trim() || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const isSeller = role === 'broker_seller';
+
+  const submit = async () => {
+    setBusy(true); haptic('success');
+    try {
+      await brokerApi.createUser({
+        fullName: name.trim(), email: email.trim(), password: genPassword(), role,
+        phone: country + ' ' + phone, organizationId: me?.organization?.id,
+      });
+      await refreshUsers();
+      onClose();
+      showToast('Usuario creado · ' + name.trim(), 'success');
+    } catch (e: any) {
+      setBusy(false);
+      showToast(e?.message || 'No se pudo crear el usuario', 'error');
+    }
+  };
 
   return (
     <Screen scroll={false} padTop={false}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
-        {/* header navy con preview de identidad */}
         <View style={{ borderBottomLeftRadius: 26, borderBottomRightRadius: 26, overflow: 'hidden' }}>
           <LinearGradient colors={gradients.navyDeep} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
             <Svg width={220} height={220} style={{ position: 'absolute', top: -110, right: -50 }}>
@@ -120,7 +148,6 @@ export function NewUser({ onClose }: { onClose: () => void }) {
         </View>
 
         <View style={{ padding: 16, gap: 16 }}>
-          {/* tarjetas de rol */}
           <View style={{ flexDirection: 'row', gap: 12 }}>
             {([['broker_seller', 'user', 'Vendedor', 'Gestiona sus clientes y órdenes'], ['broker_owner', 'key', 'Dueño', 'Acceso completo al broker']] as const).map(([r, ic, lab, desc]) => {
               const on = role === r;
@@ -178,12 +205,7 @@ export function NewUser({ onClose }: { onClose: () => void }) {
       </ScrollView>
 
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 16, paddingBottom: (insets.bottom || 0) + 16, backgroundColor: colors.bg }}>
-        <Button variant="primary" icon="send" disabled={!valid} onPress={() => {
-          haptic('success');
-          dispatch({ type: 'ADD_USER', user: { id: 'u' + Date.now(), name, email, phone: country + ' ' + phone, role, commission: isSeller ? commission : null, status: 'invited', ts: Date.now() } });
-          onClose();
-          showToast('Invitación enviada a ' + name, 'success');
-        }}>Enviar invitación</Button>
+        <Button variant="primary" icon="send" disabled={!valid} loading={busy} onPress={submit}>Crear usuario</Button>
       </View>
     </Screen>
   );

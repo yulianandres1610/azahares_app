@@ -1,232 +1,255 @@
-// Store del rol Broker: datos (clientes, órdenes, equipo, wallet, catálogo,
-// notificaciones), reducer y helpers. Portado de app/store.jsx (slice broker).
-// La identidad real (nombre/rol/email) llega desde /me; el resto se siembra
-// con datos de demostración fieles al diseño hasta que existan los endpoints.
-import React, { createContext, useContext, useMemo, useReducer } from 'react';
+// Capa de DATOS REALES del rol Broker. Consume los endpoints del backend
+// (mismos que la web) y expone datos mapeados a la UI + acciones de refresh.
+// Nada de datos mock: todo proviene de api.azaharesfuel.com.
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Me } from '../lib/api/types';
-
-// ── tipos ──────────────────────────────────────────────────────
-export type BkClientStatus = 'unapproved' | 'review' | 'approved' | 'rejected' | 'suspended';
-export type BkOrderState =
-  | 'draft' | 'quote_sent' | 'quote_accepted' | 'offer_sent' | 'offer_signed'
-  | 'invoiced' | 'payment_uploaded' | 'paid' | 'in_purchase' | 'in_transit' | 'delivered';
-export type BkUserStatus = 'active' | 'invited' | 'suspended';
-export type BkRole = 'broker_owner' | 'broker_seller';
-
-export interface BkClient {
-  id: string; name: string; legal: string; nit: string; muni: string; prov: string;
-  status: BkClientStatus; docs: number; ts: number; phone: string; email: string;
-}
-export interface BkPayment {
-  id: string; method: string; amount: number; date: string;
-  status: 'verified' | 'pending' | 'rejected'; reference?: string; sender?: string;
-}
-export interface BkOrder {
-  id: string; number: string; clientId: string; client: string; cargo: 'fuel' | 'food';
-  state: BkOrderState; fob: number; cif: number; date: string; ts: number;
-  items: number; containers: number; payments?: BkPayment[];
-}
-export interface BkUser {
-  id: string; name: string; email: string; role: BkRole; status: BkUserStatus;
-  commission?: number | null; phone?: string; ts: number;
-}
-export interface BkMove {
-  id: string; kind: 'commission' | 'markup' | 'credit' | 'cashout'; desc: string;
-  date: string; amount: number; balance: number; pending?: boolean;
-}
-export interface BkWallet { number: string; balance: number; holder: string; moves: BkMove[] }
-export interface BkNotif {
-  id: string; kind: 'available' | 'refuel' | 'coa' | 'delivery' | 'system';
-  title: string; body: string; time: string; ts: number; read: boolean;
-}
-export interface BkTier { label: string; from: number; price: number }
-export interface BkProduct {
-  id: string; name: string; code: string; unit: string; price: number; change: number;
-  icon: string; spark: number[]; tiers: BkTier[];
-}
-export interface BkCatalog { updated: string; items: BkProduct[] }
-
-// ── meta (etiquetas + colores de estado) ───────────────────────
 import { colors } from '../theme/tokens';
+import * as api from '../lib/api/broker';
+import type {
+  BrokerDashboardSummary, ClientListItem, ClientStatus, SalesCatalogItem, SalesOrderListItem,
+  SalesOrderStatus, UserListItem, Wallet, WalletTx,
+} from '../lib/api/broker';
 
-export const BK_CLIENT_STATUS: Record<BkClientStatus, { label: string; color: string; icon: string }> = {
-  unapproved: { label: 'Sin aprobar', color: colors.ink40, icon: 'clock' },
-  review: { label: 'En revisión', color: colors.amber, icon: 'clock' },
-  approved: { label: 'Aprobado', color: colors.success, icon: 'checkCircle' },
-  rejected: { label: 'Rechazado', color: colors.error, icon: 'x' },
-  suspended: { label: 'Suspendido', color: '#8b6fe0', icon: 'alert' },
+export * as brokerApi from '../lib/api/broker';
+
+// ── formato de dinero ──────────────────────────────────────────
+export const money = (n: number, dec?: boolean) =>
+  '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: dec ? 2 : 0, maximumFractionDigits: dec ? 2 : 0 });
+
+// ── estados de cliente (clave de diseño ← estado backend) ──────
+export type BkClientStatusKey = 'unapproved' | 'review' | 'approved' | 'rejected' | 'suspended';
+export const clientStatusKey = (s: ClientStatus): BkClientStatusKey =>
+  s === 'documents_uploaded' ? 'review' : s === 'created' ? 'unapproved' : (s as BkClientStatusKey);
+export const BK_CLIENT_STATUS: Record<BkClientStatusKey, { label: string; color: string }> = {
+  unapproved: { label: 'Sin aprobar', color: colors.ink40 },
+  review: { label: 'En revisión', color: colors.amber },
+  approved: { label: 'Aprobado', color: colors.success },
+  rejected: { label: 'Rechazado', color: colors.error },
+  suspended: { label: 'Suspendido', color: '#8b6fe0' },
 };
-export const BK_ORDER_STATUS: Record<BkOrderState, { label: string; color: string }> = {
+
+// ── estados de orden (backend) → etiqueta/color + índice de pipeline ──
+export const BK_ORDER_STATUS: Record<SalesOrderStatus, { label: string; color: string }> = {
   draft: { label: 'Borrador', color: colors.ink40 },
-  quote_sent: { label: 'Cotización enviada', color: colors.accent },
-  quote_accepted: { label: 'Cotización aceptada', color: colors.navy500 },
-  offer_sent: { label: 'Oferta enviada', color: colors.accent },
-  offer_signed: { label: 'Oferta firmada', color: colors.navy700 },
+  cotizacion_sent: { label: 'Cotización enviada', color: colors.accent },
+  cotizacion_accepted: { label: 'Cotización aceptada', color: colors.navy500 },
+  quote_sent: { label: 'Oferta enviada', color: colors.accent },
+  quote_signed: { label: 'Oferta firmada', color: colors.navy700 },
+  pending_client_approval: { label: 'Esperando cliente', color: colors.accent },
   invoiced: { label: 'Facturada', color: colors.amber },
   payment_uploaded: { label: 'Pago subido', color: colors.amber },
   paid: { label: 'Pagada', color: colors.success },
-  in_purchase: { label: 'En compra', color: colors.navy500 },
-  in_transit: { label: 'En tránsito', color: colors.navy700 },
+  purchase_ordered: { label: 'En compra', color: colors.navy500 },
+  shipping: { label: 'En tránsito', color: colors.navy700 },
   delivered: { label: 'Entregada', color: colors.success },
+  cancelled: { label: 'Cancelada', color: colors.error },
 };
-export const BK_USER_STATUS: Record<BkUserStatus, { label: string; color: string }> = {
+// índice macro 0..10 para barras de progreso y Pipeline; -1 = cancelada
+export const orderIdx = (s: SalesOrderStatus): number => ({
+  draft: 0, cotizacion_sent: 1, cotizacion_accepted: 2, quote_sent: 3, pending_client_approval: 3,
+  quote_signed: 4, invoiced: 5, payment_uploaded: 6, paid: 7, purchase_ordered: 8, shipping: 9, delivered: 10, cancelled: -1,
+} as Record<SalesOrderStatus, number>)[s];
+export const ORDER_PIPELINE_LEN = 11;
+
+export type BkUserStatusKey = 'active' | 'invited' | 'suspended';
+export const BK_USER_STATUS: Record<BkUserStatusKey, { label: string; color: string }> = {
   active: { label: 'Activo', color: colors.success },
   invited: { label: 'Invitado', color: colors.amber },
   suspended: { label: 'Suspendido', color: colors.error },
 };
-export const BK_PIPELINE: BkOrderState[] = [
-  'draft', 'quote_sent', 'quote_accepted', 'offer_sent', 'offer_signed', 'invoiced',
-  'payment_uploaded', 'paid', 'in_purchase', 'in_transit', 'delivered',
-];
 
-export const money = (n: number, dec?: boolean) =>
-  '$' + Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dec ? 2 : 0,
-    maximumFractionDigits: dec ? 2 : 0,
-  });
-
-// ── datos semilla ──────────────────────────────────────────────
-const D = 864e5;
-const now = Date.now();
-
-const BK_CLIENTS: BkClient[] = [
-  { id: 'k1', name: 'Comercial Habana SRL', legal: 'Comercial Habana S.R.L.', nit: '20198765432', muni: 'Centro Habana', prov: 'La Habana', status: 'approved', docs: 6, ts: now - 22 * D, phone: '+53 5 234 5678', email: 'ventas@habana-srl.cu' },
-  { id: 'k2', name: 'Distribuidora Oriente', legal: 'Distribuidora Oriente S.A.', nit: '20211223344', muni: 'Santiago', prov: 'Santiago de Cuba', status: 'review', docs: 4, ts: now - 6 * D, phone: '+53 5 778 1122', email: 'compras@doriente.cu' },
-  { id: 'k3', name: 'Energía del Centro', legal: 'Energía del Centro S.R.L.', nit: '20255667788', muni: 'Santa Clara', prov: 'Villa Clara', status: 'approved', docs: 7, ts: now - 40 * D, phone: '+53 5 445 9090', email: 'info@energiacentro.cu' },
-  { id: 'k4', name: 'Transcombustible Matanzas', legal: 'Transcombustible Matanzas S.A.', nit: '20299001122', muni: 'Matanzas', prov: 'Matanzas', status: 'unapproved', docs: 1, ts: now - 2 * D, phone: '+53 5 661 3030', email: 'gerencia@transmatanzas.cu' },
-  { id: 'k5', name: 'Servicios Camagüey', legal: 'Servicios Camagüey S.R.L.', nit: '20233445566', muni: 'Camagüey', prov: 'Camagüey', status: 'rejected', docs: 3, ts: now - 12 * D, phone: '+53 5 332 7878', email: 'admin@servcamaguey.cu' },
-  { id: 'k6', name: 'Logística Pinar', legal: 'Logística Pinar del Río S.A.', nit: '20277889900', muni: 'Pinar del Río', prov: 'Pinar del Río', status: 'suspended', docs: 5, ts: now - 60 * D, phone: '+53 5 119 4545', email: 'ops@logpinar.cu' },
-  { id: 'k7', name: 'Holguín Fuel Trade', legal: 'Holguín Fuel Trade S.R.L.', nit: '20288776655', muni: 'Holguín', prov: 'Holguín', status: 'approved', docs: 6, ts: now - 15 * D, phone: '+53 5 556 2323', email: 'trade@holguinfuel.cu' },
-  { id: 'k8', name: 'Cienfuegos Marina', legal: 'Cienfuegos Marina S.A.', nit: '20244332211', muni: 'Cienfuegos', prov: 'Cienfuegos', status: 'review', docs: 2, ts: now - 1 * D, phone: '+53 5 990 6767', email: 'marina@cienfuegos.cu' },
-];
-
-const BK_ORDERS: BkOrder[] = [
-  { id: 'o1', number: 'AZ-ORD-2041', clientId: 'k1', client: 'Comercial Habana SRL', cargo: 'fuel', state: 'in_transit', fob: 168000, cif: 214500, date: 'May 28, 2026', ts: now - 9 * D, items: 2, containers: 7 },
-  { id: 'o2', number: 'AZ-ORD-2038', clientId: 'k3', client: 'Energía del Centro', cargo: 'fuel', state: 'paid', fob: 96000, cif: 124800, date: 'May 30, 2026', ts: now - 7 * D, items: 1, containers: 4 },
-  { id: 'o3', number: 'AZ-ORD-2047', clientId: 'k7', client: 'Holguín Fuel Trade', cargo: 'food', state: 'invoiced', fob: 72000, cif: 95400, date: 'Jun 2, 2026', ts: now - 4 * D, items: 1, containers: 3 },
-  { id: 'o4', number: 'AZ-ORD-2051', clientId: 'k1', client: 'Comercial Habana SRL', cargo: 'fuel', state: 'quote_sent', fob: 48000, cif: 63200, date: 'Jun 4, 2026', ts: now - 2 * D, items: 1, containers: 2 },
-  { id: 'o5', number: 'AZ-ORD-2052', clientId: 'k8', client: 'Cienfuegos Marina', cargo: 'food', state: 'draft', fob: 120000, cif: 156000, date: 'Jun 5, 2026', ts: now - 1 * D, items: 2, containers: 5 },
-  { id: 'o6', number: 'AZ-ORD-2033', clientId: 'k3', client: 'Energía del Centro', cargo: 'fuel', state: 'delivered', fob: 144000, cif: 187200, date: 'May 18, 2026', ts: now - 19 * D, items: 2, containers: 6 },
-  { id: 'o7', number: 'AZ-ORD-2049', clientId: 'k7', client: 'Holguín Fuel Trade', cargo: 'food', state: 'offer_signed', fob: 60000, cif: 79000, date: 'Jun 3, 2026', ts: now - 3 * D, items: 1, containers: 2 },
-];
-
-const BK_USERS: BkUser[] = [
-  { id: 'u1', name: 'Marlon Quevedo', email: 'marlon@azaharesbroker.com', role: 'broker_owner', status: 'active', ts: now - 120 * D },
-  { id: 'u2', name: 'Yenisel Cabrera', email: 'yenisel@azaharesbroker.com', role: 'broker_seller', status: 'active', ts: now - 80 * D },
-  { id: 'u3', name: 'Reinier Sosa', email: 'reinier@azaharesbroker.com', role: 'broker_seller', status: 'active', ts: now - 45 * D },
-  { id: 'u4', name: 'Dayana Pérez', email: 'dayana@azaharesbroker.com', role: 'broker_seller', status: 'invited', ts: now - 3 * D },
-  { id: 'u5', name: 'Osmani Ferrer', email: 'osmani@azaharesbroker.com', role: 'broker_seller', status: 'suspended', ts: now - 30 * D },
-];
-
-const BK_WALLET: BkWallet = {
-  number: '4471 2208 5530 1942', balance: 18450.75, holder: 'Marlon Quevedo',
-  moves: [
-    { id: 'm1', kind: 'commission', desc: 'Comisión · AZ-ORD-2038', date: 'May 30, 2026', amount: 3120, balance: 18450.75 },
-    { id: 'm2', kind: 'markup', desc: 'Markup · AZ-ORD-2041', date: 'May 28, 2026', amount: 2680, balance: 15330.75 },
-    { id: 'm3', kind: 'cashout', desc: 'Retiro a banco · BPA', date: 'May 24, 2026', amount: -5000, balance: 12650.75 },
-    { id: 'm4', kind: 'commission', desc: 'Comisión · AZ-ORD-2033', date: 'May 18, 2026', amount: 4210, balance: 17650.75 },
-    { id: 'm5', kind: 'credit', desc: 'Crédito de Azahares', date: 'May 12, 2026', amount: 1500, balance: 13440.75 },
-    { id: 'm6', kind: 'markup', desc: 'Markup · AZ-ORD-2049', date: 'May 9, 2026', amount: 1940, balance: 11940.75 },
-  ],
-};
-
-const BK_NOTIFS: BkNotif[] = [
-  { id: 'bn1', kind: 'available', title: 'Cliente aceptó cotización', body: 'Comercial Habana SRL aceptó la cotización AZ-ORD-2051.', time: 'hace 12 min', ts: now - 72e4, read: false },
-  { id: 'bn2', kind: 'refuel', title: 'Pago subido', body: 'Energía del Centro subió el comprobante de AZ-ORD-2038.', time: 'hace 1 h', ts: now - 36e5, read: false },
-  { id: 'bn3', kind: 'coa', title: 'KYC aprobado', body: 'Holguín Fuel Trade fue aprobado por el equipo de Azahares.', time: 'hace 3 h', ts: now - 108e5, read: false },
-  { id: 'bn4', kind: 'delivery', title: 'Retiro procesado', body: 'Tu cashout de $5,000 fue enviado al banco.', time: 'Ayer', ts: now - 9e7, read: true },
-  { id: 'bn5', kind: 'system', title: 'Nueva orden creada', body: 'AZ-ORD-2052 para Cienfuegos Marina quedó en borrador.', time: 'Ayer', ts: now - 95e6, read: true },
-];
-
-const BK_CATALOG: BkCatalog = {
-  updated: 'Hoy, 08:00 EST',
-  items: [
-    { id: 'p1', name: 'Diésel B5', code: 'DSL-B5', unit: 'gal', price: 0.92, change: 1.4, icon: 'fuel', spark: [0.88, 0.89, 0.9, 0.89, 0.91, 0.915, 0.92], tiers: [{ label: '1–4 cont.', from: 1, price: 0.92 }, { label: '5–9 cont.', from: 5, price: 0.895 }, { label: '10–24 cont.', from: 10, price: 0.87 }, { label: '25+ cont.', from: 25, price: 0.85 }] },
-    { id: 'p2', name: 'Gasolina 95', code: 'GAS-95', unit: 'gal', price: 1.08, change: -0.8, icon: 'fuel', spark: [1.1, 1.11, 1.09, 1.1, 1.085, 1.082, 1.08], tiers: [{ label: '1–4 cont.', from: 1, price: 1.08 }, { label: '5–9 cont.', from: 5, price: 1.05 }, { label: '10–24 cont.', from: 10, price: 1.02 }, { label: '25+ cont.', from: 25, price: 0.99 }] },
-    { id: 'p3', name: 'Jet A-1', code: 'JET-A1', unit: 'gal', price: 1.24, change: 2.1, icon: 'navigation', spark: [1.18, 1.19, 1.2, 1.21, 1.22, 1.235, 1.24], tiers: [{ label: '1–4 cont.', from: 1, price: 1.24 }, { label: '5–9 cont.', from: 5, price: 1.205 }, { label: '10–24 cont.', from: 10, price: 1.17 }, { label: '25+ cont.', from: 25, price: 1.14 }] },
-    { id: 'p4', name: 'Fuel Oil 6', code: 'FO-6', unit: 'bbl', price: 78.40, change: 0.5, icon: 'droplet', spark: [76, 77, 76.5, 77.2, 78, 78.1, 78.4], tiers: [{ label: '1–4 cont.', from: 1, price: 78.40 }, { label: '5–9 cont.', from: 5, price: 76.10 }, { label: '10–24 cont.', from: 10, price: 74.00 }, { label: '25+ cont.', from: 25, price: 72.20 }] },
-    { id: 'p5', name: 'Gasolina 91', code: 'GAS-91', unit: 'gal', price: 0.99, change: 0, icon: 'fuel', spark: [0.99, 0.98, 0.99, 1.0, 0.99, 0.99, 0.99], tiers: [{ label: '1–4 cont.', from: 1, price: 0.99 }, { label: '5–9 cont.', from: 5, price: 0.965 }, { label: '10–24 cont.', from: 10, price: 0.94 }, { label: '25+ cont.', from: 25, price: 0.92 }] },
-  ],
-};
-
-// ── estado + reducer ───────────────────────────────────────────
-export interface BkState {
-  clients: BkClient[];
-  orders: BkOrder[];
-  users: BkUser[];
-  wallet: BkWallet;
-  notifs: BkNotif[];
-  catalog: BkCatalog;
+// ── tipos UI mapeados ──────────────────────────────────────────
+export interface UIClient {
+  id: string; name: string; muni: string; prov: string; statusKey: BkClientStatusKey;
+  docs: number; phone: string; email: string; ts: number; registered: boolean;
 }
-
-type Action =
-  | { type: 'ADD_CLIENT'; client: BkClient }
-  | { type: 'ADD_ORDER'; order: BkOrder }
-  | { type: 'ADD_USER'; user: BkUser }
-  | { type: 'SET_ORDER'; id: string; patch: Partial<BkOrder> }
-  | { type: 'NOTIF_READ'; id: string }
-  | { type: 'NOTIF_READ_ALL' }
-  | { type: 'NOTIF_CLEAR' }
-  | { type: 'CASHOUT'; amount: number; desc: string };
-
-function reducer(s: BkState, a: Action): BkState {
-  switch (a.type) {
-    case 'ADD_CLIENT': return { ...s, clients: [a.client, ...s.clients] };
-    case 'ADD_ORDER': return { ...s, orders: [a.order, ...s.orders] };
-    case 'ADD_USER': return { ...s, users: [a.user, ...s.users] };
-    case 'SET_ORDER': return { ...s, orders: s.orders.map((o) => (o.id === a.id ? { ...o, ...a.patch } : o)) };
-    case 'NOTIF_READ': return { ...s, notifs: s.notifs.map((n) => (n.id === a.id ? { ...n, read: true } : n)) };
-    case 'NOTIF_READ_ALL': return { ...s, notifs: s.notifs.map((n) => ({ ...n, read: true })) };
-    case 'NOTIF_CLEAR': return { ...s, notifs: [] };
-    case 'CASHOUT': {
-      const w = s.wallet;
-      return { ...s, wallet: { ...w, moves: [{ id: 'm' + Date.now(), kind: 'cashout', desc: a.desc || 'Retiro solicitado', date: 'Jun 7, 2026', amount: -a.amount, balance: w.balance, pending: true }, ...w.moves] } };
-    }
-    default: return s;
-  }
+export interface UIOrder {
+  id: string; number: string; client: string; clientId: string | null;
+  status: SalesOrderStatus; idx: number; cif: number; date: string; ts: number;
+  items: number; pricingChanged: boolean; cargo: 'fuel' | 'food';
 }
+export interface UICatalogTier { label: string; price: number; containers: number }
+export interface UICatalogItem {
+  id: string; name: string; code: string; unit: string; price: number; change: number;
+  icon: string; spark: number[]; tiers: UICatalogTier[]; imageUrl: string | null;
+  unitsPerContainer: number;
+}
+export interface UICatalog { updated: string; items: UICatalogItem[] }
 
-function initial(me: Me | null): BkState {
-  const holder = me?.fullName || BK_WALLET.holder;
+// ── mapeos ─────────────────────────────────────────────────────
+const fmtDate = (iso: string) => {
+  try { return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return iso; }
+};
+function mapClient(c: ClientListItem): UIClient {
   return {
-    clients: BK_CLIENTS,
-    orders: BK_ORDERS,
-    users: BK_USERS,
-    wallet: { ...BK_WALLET, holder },
-    notifs: BK_NOTIFS,
-    catalog: BK_CATALOG,
+    id: c.id, name: c.legalName, muni: c.municipality || '—', prov: c.province || '—',
+    statusKey: clientStatusKey(c.status), docs: c.documentsCount,
+    phone: c.contactPhone || '—', email: c.contactEmail || '—',
+    ts: new Date(c.createdAt).getTime(), registered: !!c.registrationCompletedAt,
+  };
+}
+function mapOrder(o: SalesOrderListItem): UIOrder {
+  return {
+    id: o.id, number: o.orderNumber, client: o.client?.name || '—', clientId: o.client?.id || null,
+    status: o.status, idx: orderIdx(o.status), cif: o.totalCif, date: fmtDate(o.createdAt),
+    ts: new Date(o.createdAt).getTime(), items: o.itemsCount, pricingChanged: !!o.pricingInvalidatedAt, cargo: 'fuel',
+  };
+}
+function iconForCatalog(it: SalesCatalogItem): string {
+  const s = `${it.category} ${it.name} ${it.sku}`.toLowerCase();
+  if (s.includes('jet') || s.includes('avia')) return 'navigation';
+  if (s.includes('fuel oil') || s.includes('oil') || s.includes('crudo') || s.includes('bunker')) return 'droplet';
+  return 'fuel';
+}
+function mapCatalog(cat: api.SalesCatalog, sparks: Record<string, { spark: number[]; change: number }>): UICatalog {
+  return {
+    updated: (() => { try { return new Date(cat.generatedAt).toLocaleString('es', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } })(),
+    items: cat.items.map((it) => {
+      const sp = sparks[it.id] || { spark: [], change: 0 };
+      const scales = it.containerScales || [];
+      const tiers: UICatalogTier[] = scales.map((s) => ({ label: `${s.containers}+ cont.`, price: s.fobUnitPrice, containers: s.containers }));
+      const perContainer = it.innerQuantity && it.innerQuantity > 0
+        ? it.innerQuantity
+        : scales[0] && scales[0].containers > 0 ? Math.round(scales[0].totalLiters / scales[0].containers) : 24000;
+      return {
+        id: it.id, name: it.name, code: it.sku, unit: it.unit, price: it.basicUnitPrice,
+        change: sp.change, icon: iconForCatalog(it),
+        spark: sp.spark.length ? sp.spark : [it.basicUnitPrice, it.basicUnitPrice],
+        tiers: tiers.length ? tiers : [{ label: '1+ cont.', price: it.basicUnitPrice, containers: 1 }],
+        imageUrl: it.imageUrl, unitsPerContainer: perContainer,
+      };
+    }),
   };
 }
 
-// ── conteos para el dashboard ──────────────────────────────────
-export function bkCounts(s: BkState) {
-  const cl = s.clients, od = s.orders;
-  const idx = (st: BkOrderState) => BK_PIPELINE.indexOf(st);
+// ── conteos para el dashboard (desde el summary real) ──────────
+export function summaryCounts(d: BrokerDashboardSummary | null) {
+  const so = d?.salesOrders;
   return {
-    clientsActive: cl.filter((c) => c.status === 'approved').length,
-    clientsTotal: cl.length,
-    clientsPending: cl.filter((c) => c.status === 'review' || c.status === 'unapproved').length,
-    quotesSent: od.filter((o) => idx(o.state) >= 1).length,
-    quotesSum: od.filter((o) => idx(o.state) >= 1).reduce((a, o) => a + o.cif, 0),
-    invoiced: od.filter((o) => idx(o.state) >= 5).length,
-    invoicedSum: od.filter((o) => idx(o.state) >= 5).reduce((a, o) => a + o.cif, 0),
-    paid: od.filter((o) => idx(o.state) >= 7).length,
-    paidSum: od.filter((o) => idx(o.state) >= 7).reduce((a, o) => a + o.cif, 0),
-    ordersActive: od.filter((o) => idx(o.state) >= 1 && idx(o.state) < 10).length,
-    conversion: od.length ? Math.round(od.filter((o) => idx(o.state) >= 7).length / od.length * 100) : 0,
+    clientsActive: d?.clients.active ?? 0,
+    clientsTotal: d?.clients.total ?? 0,
+    clientsPending: d?.clients.pending ?? 0,
+    quotesSent: so?.quotesSent ?? 0,
+    quotesSum: so?.quotesSentAmount ?? 0,
+    invoiced: so?.invoicesIssued ?? 0,
+    invoicedSum: so?.invoicesIssuedAmount ?? 0,
+    paid: so?.invoicesPaid ?? 0,
+    paidSum: so?.invoicesPaidAmount ?? 0,
+    ordersActive: (so?.quotesSent ?? 0) + (so?.invoicesIssued ?? 0) - (so?.delivered ?? 0) - (so?.cancelled ?? 0),
+    conversion: so && so.total ? Math.round((so.invoicesPaid / so.total) * 100) : 0,
+    totalSold: so?.invoicesPaidAmount ?? 0,
   };
 }
 
-// ── contexto ───────────────────────────────────────────────────
-const Ctx = createContext<[BkState, React.Dispatch<Action>] | null>(null);
+// ════════════════════════════════════════════════════════════════
+// Provider
+// ════════════════════════════════════════════════════════════════
+interface BrokerCtx {
+  loading: boolean;
+  error: string | null;
+  dashboard: BrokerDashboardSummary | null;
+  clients: UIClient[];
+  orders: UIOrder[];
+  catalog: UICatalog | null;
+  wallet: Wallet | null;
+  walletTx: WalletTx[];
+  users: UserListItem[];
+  defaultPriceListId: string | null;
+  refreshAll: () => Promise<void>;
+  refreshClients: () => Promise<void>;
+  refreshOrders: () => Promise<void>;
+  refreshWallet: () => Promise<void>;
+  refreshUsers: () => Promise<void>;
+  refreshDashboard: () => Promise<void>;
+}
+
+const Ctx = createContext<BrokerCtx | null>(null);
 
 export function BrokerProvider({ me, children }: { me: Me | null; children: React.ReactNode }) {
-  const init = useMemo(() => initial(me), [me?.id, me?.fullName]);
-  const [state, dispatch] = useReducer(reducer, init);
-  return <Ctx.Provider value={[state, dispatch]}>{children}</Ctx.Provider>;
+  const owner = me?.role === 'broker_owner';
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<BrokerDashboardSummary | null>(null);
+  const [clients, setClients] = useState<UIClient[]>([]);
+  const [orders, setOrders] = useState<UIOrder[]>([]);
+  const [catalog, setCatalog] = useState<UICatalog | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [walletTx, setWalletTx] = useState<WalletTx[]>([]);
+  const [users, setUsers] = useState<UserListItem[]>([]);
+  const [defaultPriceListId, setDefaultPriceListId] = useState<string | null>(null);
+
+  const refreshDashboard = useCallback(async () => {
+    try { setDashboard(await api.getBrokerDashboardSummary()); } catch {}
+  }, []);
+  const refreshClients = useCallback(async () => {
+    try { setClients((await api.listClients()).map(mapClient)); } catch {}
+  }, []);
+  const refreshOrders = useCallback(async () => {
+    try { setOrders((await api.listSalesOrders()).map(mapOrder)); } catch {}
+  }, []);
+  const refreshWallet = useCallback(async () => {
+    try {
+      const w = await api.getMyWallet();
+      setWallet(w);
+      if (w) setWalletTx(await api.listWalletTransactions(w.id, 50));
+      else setWalletTx([]);
+    } catch {}
+  }, []);
+  const refreshUsers = useCallback(async () => {
+    if (!owner) return;
+    try { setUsers(await api.listUsers()); } catch {}
+  }, [owner]);
+
+  const refreshCatalog = useCallback(async () => {
+    try {
+      const cat = await api.getSalesCatalog();
+      // sparkline + % de cambio por producto (en paralelo, tolerante a fallos)
+      const sparks: Record<string, { spark: number[]; change: number }> = {};
+      await Promise.all(
+        cat.items.map(async (it) => {
+          try {
+            const h = await api.getProductPriceHistory(it.id, 'daily', 21);
+            sparks[it.id] = { spark: (h.points || []).map((p) => p.close), change: h.deltaPercent ?? 0 };
+          } catch { /* producto sin historial → sparkline plano */ }
+        }),
+      );
+      setCatalog(mapCatalog(cat, sparks));
+    } catch {}
+  }, []);
+
+  const refreshDefaultPriceList = useCallback(async () => {
+    try {
+      const lists = await api.listPriceLists();
+      const def = lists.find((l) => l.isDefault) || lists.find((l) => l.isBrokerOwned) || lists[0];
+      setDefaultPriceListId(def?.id ?? null);
+    } catch {}
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    setError(null);
+    try {
+      await Promise.all([
+        refreshDashboard(), refreshClients(), refreshOrders(), refreshWallet(),
+        refreshUsers(), refreshCatalog(), refreshDefaultPriceList(),
+      ]);
+    } catch (e: any) {
+      setError(e?.message || 'Error de conexión');
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshDashboard, refreshClients, refreshOrders, refreshWallet, refreshUsers, refreshCatalog, refreshDefaultPriceList]);
+
+  useEffect(() => { refreshAll(); }, [refreshAll]);
+
+  const value: BrokerCtx = useMemo(() => ({
+    loading, error, dashboard, clients, orders, catalog, wallet, walletTx, users, defaultPriceListId,
+    refreshAll, refreshClients, refreshOrders, refreshWallet, refreshUsers, refreshDashboard,
+  }), [loading, error, dashboard, clients, orders, catalog, wallet, walletTx, users, defaultPriceListId, refreshAll, refreshClients, refreshOrders, refreshWallet, refreshUsers, refreshDashboard]);
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useBroker(): [BkState, React.Dispatch<Action>] {
+export function useBroker(): BrokerCtx {
   const v = useContext(Ctx);
   if (!v) throw new Error('useBroker must be used within BrokerProvider');
   return v;

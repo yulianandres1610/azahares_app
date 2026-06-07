@@ -1,5 +1,5 @@
-// Wizard de nueva orden (Cliente · Productos · Cargos · Confirmar).
-// Portado de app/broker-app.jsx (NewOrder).
+// Wizard de nueva orden — crea una orden REAL (POST /sales-orders) con cliente
+// aprobado, producto del catálogo del día, contenedores y cargos navieros.
 import React, { useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,40 +8,65 @@ import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/to
 import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, Field, Screen, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { money, useBroker } from '../../store/BrokerStore';
+import { money, useBroker, brokerApi, type UICatalogItem } from '../../store/BrokerStore';
 import { CheckMark, FadeUp, WizardHeader } from './ui';
 
 export function NewOrder({ clientId: initialClient, onClose }: { clientId?: string; onClose: () => void }) {
-  const [s, dispatch] = useBroker();
+  const { clients, catalog, defaultPriceListId, refreshOrders, refreshDashboard } = useBroker();
   const { showToast } = useApp();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [clientId, setClientId] = useState(initialClient || '');
   const [q, setQ] = useState('');
-  const [qty, setQty] = useState('24000');
-  const [price, setPrice] = useState('0.92');
+  const items = catalog?.items || [];
+  const [productId, setProductId] = useState(items[0]?.id || '');
+  const [containers, setContainers] = useState(1);
+  const [price, setPrice] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const client = s.clients.find((c) => c.id === clientId);
-  const fob = Math.round(Number(qty || 0) * Number(price || 0));
-  const containers = Math.max(1, Math.ceil(Number(qty || 0) / 24000));
-  const charges = Math.round(fob * 0.19) + 4200;
-  const cif = fob + charges;
-  const steps = ['Cliente', 'Productos', 'Cargos', 'Confirmar'];
-  const canNext = step === 0 ? !!clientId : step === 1 ? fob > 0 : true;
+  const approvedClients = clients.filter((c) => c.statusKey === 'approved');
+  const client = approvedClients.find((c) => c.id === clientId);
+  const product: UICatalogItem | undefined = items.find((p) => p.id === productId) || items[0];
 
-  const create = () => {
+  // precio por volumen: mejor tier cuyo umbral de contenedores <= elegidos
+  const tierPrice = (() => {
+    if (!product) return 0;
+    const sorted = [...product.tiers].sort((a, b) => a.containers - b.containers);
+    let p = sorted[0]?.price ?? product.price;
+    for (const t of sorted) if (containers >= t.containers) p = t.price;
+    return p;
+  })();
+  const unitPrice = Number(price) > 0 ? Number(price) : tierPrice;
+  const qty = containers * (product?.unitsPerContainer || 24000);
+  const fob = Math.round(qty * unitPrice);
+  const flete = Math.round(fob * 0.14), thcd = 2400, ispd = 1800, seguro = Math.round(fob * 0.05);
+  const charges = flete + thcd + ispd + seguro;
+  const cif = fob + charges;
+
+  const steps = ['Cliente', 'Productos', 'Cargos', 'Confirmar'];
+  const canNext = step === 0 ? !!clientId : step === 1 ? !!product && fob > 0 : true;
+
+  const create = async () => {
+    if (!product || !client) return;
     setCreating(true); haptic('medium');
-    setTimeout(() => {
-      const num = 'AZ-ORD-' + (2050 + (s.orders.length % 90) + 5);
-      dispatch({ type: 'ADD_ORDER', order: { id: 'o' + Date.now(), number: num, clientId, client: client!.name, cargo: 'fuel', state: 'draft', fob, cif, date: 'Jun 7, 2026', ts: Date.now(), items: 1, containers } });
-      setCreating(false); haptic('success'); onClose();
-      showToast(num + ' · Borrador creado', 'success');
-    }, 1100);
+    try {
+      const order = await brokerApi.createSalesOrder({
+        clientId,
+        priceListId: defaultPriceListId || undefined,
+        items: [{ productId: product.id, quantity: qty, unit: product.unit, unitPrice }],
+        fleteMaritimo: flete, thcd, ispd, seguro,
+        portOfLoading: 'Port Shoals, AR', portOfDischarge: 'La Habana', deliveryTimeDays: 20,
+      });
+      await Promise.all([refreshOrders(), refreshDashboard()]);
+      haptic('success'); onClose();
+      showToast(order.orderNumber + ' · Borrador creado', 'success');
+    } catch (e: any) {
+      setCreating(false);
+      showToast(e?.message || 'No se pudo crear la orden', 'error');
+    }
   };
   const next = () => { if (step < 3) { haptic('light'); setStep(step + 1); } else create(); };
-
-  const clientList = s.clients.filter((c) => c.status === 'approved' && `${c.name} ${c.nit}`.toLowerCase().includes(q.toLowerCase()));
+  const clientList = approvedClients.filter((c) => `${c.name}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <Screen scroll={false} padTop={false}>
@@ -52,6 +77,7 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
             <FadeUp>
               <Field icon="search" placeholder="Buscar cliente aprobado" value={q} onChangeText={setQ} />
               <View style={{ gap: 9, marginTop: 14 }}>
+                {clientList.length === 0 && <AppText style={{ fontSize: 13, color: colors.ink50, textAlign: 'center', paddingVertical: 20 }}>No hay clientes aprobados. Invitá y aprobá un cliente primero.</AppText>}
                 {clientList.map((c) => {
                   const on = clientId === c.id;
                   return (
@@ -61,44 +87,60 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                         <AppText weight="700" style={{ color: '#fff', fontSize: 14 }}>{c.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}</AppText>
                       </LinearGradient>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <AppText weight="700" style={{ fontSize: 14, color: colors.ink }}>{c.name}</AppText>
-                        <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>NIT {c.nit}</AppText>
+                        <AppText weight="700" numberOfLines={1} style={{ fontSize: 14, color: colors.ink }}>{c.name}</AppText>
+                        <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{c.muni}, {c.prov}</AppText>
                       </View>
                       {on && <CheckMark size={20} color={colors.accent} />}
                     </Tap>
                   );
                 })}
               </View>
-              <AppText style={{ fontSize: 12.5, color: colors.ink50, textAlign: 'center', marginTop: 16 }}>Se usa la lista base de precios de Azahares.</AppText>
             </FadeUp>
           )}
 
           {step === 1 && (
             <FadeUp style={{ gap: 16 }}>
+              {/* selector de producto */}
+              <View>
+                <AppText weight="600" style={{ fontSize: 13, color: colors.ink60, marginBottom: 9 }}>Producto</AppText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 9 }}>
+                  {items.map((p) => {
+                    const on = product?.id === p.id;
+                    return (
+                      <Tap key={p.id} hapticKind="select" onPress={() => { setProductId(p.id); setPrice(''); }}
+                        style={{ paddingVertical: 11, paddingHorizontal: 14, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: on ? colors.navy700 : colors.surface, ...(on ? {} : { borderWidth: 1.5, borderColor: colors.line }) }}>
+                        <Icon name={p.icon as any} size={17} color={on ? '#fff' : colors.navy700} />
+                        <AppText weight="600" style={{ fontSize: 13, color: on ? '#fff' : colors.ink }}>{p.name}</AppText>
+                      </Tap>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
               <Card pad={18} style={{ gap: 16 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
                   <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="fuel" size={21} color={colors.navy700} />
+                    <Icon name={(product?.icon as any) || 'fuel'} size={21} color={colors.navy700} />
                   </View>
                   <View>
-                    <AppText weight="700" style={{ fontSize: 15, color: colors.ink }}>Diésel B5 · iso-tank</AppText>
-                    <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>24,000 L por contenedor</AppText>
+                    <AppText weight="700" style={{ fontSize: 15, color: colors.ink }}>{product?.name || 'Producto'} · iso-tank</AppText>
+                    <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{(product?.unitsPerContainer || 24000).toLocaleString()} {product?.unit || 'L'} por contenedor</AppText>
                   </View>
                 </View>
                 <View>
                   <AppText weight="600" style={{ fontSize: 13, color: colors.ink60, marginBottom: 9 }}>Contenedores</AppText>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, justifyContent: 'center' }}>
-                    <CounterBtn disabled={containers <= 1} minus onPress={() => setQty(String(Math.max(1, containers - 1) * 24000))} />
+                    <CounterBtn disabled={containers <= 1} minus onPress={() => setContainers(Math.max(1, containers - 1))} />
                     <View style={{ alignItems: 'center', minWidth: 76 }}>
                       <AppText serif weight="600" style={{ fontSize: 40, color: colors.ink, lineHeight: 42 }}>{containers}</AppText>
                       <AppText weight="600" style={{ fontSize: 11, color: colors.ink40, marginTop: 2 }}>× 20ft</AppText>
                     </View>
-                    <CounterBtn onPress={() => setQty(String((containers + 1) * 24000))} />
+                    <CounterBtn onPress={() => setContainers(containers + 1)} />
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ flex: 1 }}><Field2b label="Volumen total" value={Number(qty).toLocaleString() + ' L'} /></View>
-                  <View style={{ flex: 1 }}><Field label="Precio/gal (USD)" icon="dollar" value={price} onChangeText={(v) => setPrice(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" /></View>
+                  <View style={{ flex: 1 }}><Field2b label="Volumen total" value={qty.toLocaleString() + ' ' + (product?.unit || 'L')} /></View>
+                  <View style={{ flex: 1 }}><Field label={`Precio/${product?.unit || 'u'} (USD)`} icon="dollar" value={price || tierPrice.toFixed(2)} onChangeText={(v) => setPrice(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" /></View>
                 </View>
               </Card>
               <Summary label="Subtotal FOB" value={money(fob)} />
@@ -108,8 +150,11 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
           {step === 2 && (
             <FadeUp style={{ gap: 16 }}>
               <Card pad={0} style={{ overflow: 'hidden' }}>
-                <RowH icon="ship" title="Cargos navieros" badge="Solo lectura" />
-                <KV label="Flete + THCD + ISPD + Seguro" value={money(charges)} last />
+                <RowH icon="ship" title="Cargos navieros" badge="Editable luego" />
+                <KV label="Flete" value={money(flete)} />
+                <KV label="THCD" value={money(thcd)} />
+                <KV label="ISPD" value={money(ispd)} />
+                <KV label="Seguro" value={money(seguro)} last />
               </Card>
               <Card pad={16} style={{ gap: 13 }}>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -126,8 +171,8 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
             <FadeUp style={{ gap: 14 }}>
               <Card pad={0} style={{ overflow: 'hidden' }}>
                 <KV label="Cliente" value={client ? client.name : '—'} />
-                <KV label="Producto" value="Diésel B5" />
-                <KV label="Cantidad" value={Number(qty).toLocaleString() + ' L'} />
+                <KV label="Producto" value={product?.name || '—'} />
+                <KV label="Cantidad" value={qty.toLocaleString() + ' ' + (product?.unit || 'L')} />
                 <KV label="Subtotal FOB" value={money(fob)} />
                 <KV label="Cargos" value={money(charges)} />
                 <KV label="Total CIF" value={money(cif)} strong last />
@@ -149,9 +194,7 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
           </View>
         )}
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          {step > 0 && (
-            <Button variant="outline" full={false} icon="chevL" onPress={() => { haptic('light'); setStep(step - 1); }} style={{ width: 56 }}>{' '}</Button>
-          )}
+          {step > 0 && <Button variant="outline" full={false} icon="chevL" onPress={() => { haptic('light'); setStep(step - 1); }} style={{ width: 56 }}>{' '}</Button>}
           <View style={{ flex: 1 }}>
             <Button onPress={next} disabled={!canNext || creating} loading={creating} variant={step === 3 ? 'success' : 'primary'} icon={step === 3 ? 'check' : undefined} iconRight={step < 3 ? 'arrowR' : undefined}>
               {step === 3 ? 'Crear orden' : 'Continuar'}
@@ -175,7 +218,6 @@ function CounterBtn({ onPress, disabled, minus }: { onPress: () => void; disable
     </Tap>
   );
 }
-
 function Field2b({ label, value }: { label: string; value: string }) {
   return (
     <View>
@@ -221,9 +263,7 @@ function KV({ label, value, strong, last }: { label: string; value: string; stro
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: last ? 0 : 1, borderBottomColor: colors.line, backgroundColor: strong ? alpha(colors.navy500, 0.05) : 'transparent' }}>
       <AppText weight={strong ? '700' : '500'} style={{ fontSize: 13.5, color: strong ? colors.ink : colors.ink50 }}>{label}</AppText>
-      {strong
-        ? <AppText serif weight="700" style={{ fontSize: 17, color: colors.ink }}>{value}</AppText>
-        : <AppText weight="700" style={{ fontSize: 14, color: colors.ink }}>{value}</AppText>}
+      {strong ? <AppText serif weight="700" style={{ fontSize: 17, color: colors.ink }}>{value}</AppText> : <AppText weight="700" style={{ fontSize: 14, color: colors.ink }}>{value}</AppText>}
     </View>
   );
 }
