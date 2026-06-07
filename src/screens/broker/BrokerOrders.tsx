@@ -12,8 +12,36 @@ import { AppText, Button, Card, Chip, Field, IconButton, Screen, Sheet, Tap, hap
 import { useApp } from '../../store/AppContext';
 import { BK_ORDER_STATUS, money, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
 import { putSigned } from '../../lib/api/containers';
-import type { AuditLog, OrderPaymentsSummary, PaymentRow, PublicTrackingResponse, SalesOrderResponse, TrackingStep } from '../../lib/api/broker';
+import type { AuditLog, OrderPaymentsSummary, PaymentRow, PublicTrackingResponse, SalesOrderResponse, SalesOrderStatus, TrackingStep } from '../../lib/api/broker';
 import { FadeUp, Hero, HeroStat, OrderBadge, Pipeline, useBkNav, useCountUp } from './ui';
+
+const PENDING_STATUSES: SalesOrderStatus[] = ['draft', 'cotizacion_sent', 'cotizacion_accepted', 'quote_sent', 'quote_signed', 'pending_client_approval', 'invoiced', 'payment_uploaded'];
+const COMPLETED_STATUSES: SalesOrderStatus[] = ['paid', 'purchase_ordered', 'shipping', 'delivered'];
+const ORDER_FILTERS: { value: string; label: string; color?: string }[] = [
+  { value: 'all', label: 'Todas' },
+  { value: 'pending', label: 'En proceso', color: colors.accent },
+  { value: 'completed', label: 'Completadas', color: colors.success },
+  { value: 'repricing', label: 'Precio cambió', color: colors.amber },
+  { value: 'draft', label: BK_ORDER_STATUS.draft.label, color: BK_ORDER_STATUS.draft.color },
+  { value: 'cotizacion_sent', label: BK_ORDER_STATUS.cotizacion_sent.label, color: BK_ORDER_STATUS.cotizacion_sent.color },
+  { value: 'cotizacion_accepted', label: BK_ORDER_STATUS.cotizacion_accepted.label, color: BK_ORDER_STATUS.cotizacion_accepted.color },
+  { value: 'quote_sent', label: BK_ORDER_STATUS.quote_sent.label, color: BK_ORDER_STATUS.quote_sent.color },
+  { value: 'invoiced', label: BK_ORDER_STATUS.invoiced.label, color: BK_ORDER_STATUS.invoiced.color },
+  { value: 'payment_uploaded', label: BK_ORDER_STATUS.payment_uploaded.label, color: BK_ORDER_STATUS.payment_uploaded.color },
+  { value: 'paid', label: BK_ORDER_STATUS.paid.label, color: BK_ORDER_STATUS.paid.color },
+  { value: 'cancelled', label: BK_ORDER_STATUS.cancelled.label, color: BK_ORDER_STATUS.cancelled.color },
+];
+function orderMatchesFilter(o: UIOrder, filter: string): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'pending') return PENDING_STATUSES.includes(o.status);
+  if (filter === 'completed') return COMPLETED_STATUSES.includes(o.status);
+  if (filter === 'repricing') return o.pricingChanged;
+  return o.status === filter;
+}
+function orderFilterCount(orders: UIOrder[], filter: string): number {
+  if (filter === 'all') return orders.length;
+  return orders.filter((o) => orderMatchesFilter(o, filter)).length;
+}
 
 export function BrokerOrders() {
   const { orders, loading, refreshOrders, dashboard } = useBroker();
@@ -22,8 +50,7 @@ export function BrokerOrders() {
   const [filter, setFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const list = orders.filter((o) => {
-    if (filter === 'process' && o.idx >= 10) return false;
-    if (filter === 'done' && o.idx < 10) return false;
+    if (!orderMatchesFilter(o, filter)) return false;
     if (q && !`${o.number} ${o.client}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }).sort((a, b) => b.ts - a.ts);
@@ -51,9 +78,9 @@ export function BrokerOrders() {
           <Field icon="search" placeholder="Buscar nº de orden o cliente" value={q} onChangeText={setQ} right={q ? <IconButton name="x" variant="plain" iconSize={16} size={32} onPress={() => setQ('')} /> : undefined} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
-          <Chip label="Todas" active={filter === 'all'} count={orders.length} onPress={() => setFilter('all')} />
-          <Chip label="En proceso" active={filter === 'process'} color={colors.accent} count={orders.filter((o) => o.idx < 10).length} onPress={() => setFilter('process')} />
-          <Chip label="Completadas" active={filter === 'done'} color={colors.success} count={orders.filter((o) => o.idx >= 10).length} onPress={() => setFilter('done')} />
+          {ORDER_FILTERS.map((f) => (
+            <Chip key={f.value} label={f.label} active={filter === f.value} count={orderFilterCount(orders, f.value)} color={f.color} onPress={() => setFilter(f.value)} />
+          ))}
         </ScrollView>
 
         {loading && orders.length === 0 ? (
@@ -269,7 +296,7 @@ function fallbackSummary(o: SalesOrderResponse): OrderPaymentsSummary {
     ? [{
         id: 'order-proof', amount: o.totalCif, method: o.paymentMethod || 'wired_transfer', reference: null,
         status: o.paymentVerifiedAt ? 'verified' : o.paymentRejectionReason ? 'rejected' : 'uploaded',
-        proofUrl: o.paymentProofUrl, proofFilename: null, notes: null,
+        proofs: [], proofUrl: o.paymentProofUrl, proofFilename: null, notes: null,
         rejectionReason: o.paymentRejectionReason, uploadedAt: o.paymentUploadedAt, verifiedAt: o.paymentVerifiedAt,
       }]
     : [];
@@ -300,8 +327,12 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
   const pct = o.totalCif ? Math.min(100, Math.round((verified / o.totalCif) * 100)) : 0;
   const pays = sum?.payments || [];
 
-  const viewProof = async () => {
+  const viewProof = async (p: PaymentRow) => {
     haptic('light');
+    // 1) URL directa del comprobante del pago (pagos parciales)
+    const direct = p.proofs?.find((x) => x.url)?.url || (p.proofUrl && p.proofUrl.startsWith('http') ? p.proofUrl : null);
+    if (direct) { try { await Linking.openURL(direct); return; } catch { /* sigue al fallback */ } }
+    // 2) fallback: comprobante único de la orden (firma on-demand)
     try { const { url } = await brokerApi.getPaymentProofDownloadUrl(o.id); if (url) await Linking.openURL(url); else showToast('Comprobante no disponible', 'warn'); }
     catch (e: any) { showToast(e?.message || 'No se pudo abrir el comprobante', 'error'); }
   };
@@ -338,7 +369,7 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
         <AppText weight="700" style={{ fontSize: 12, color: colors.ink40, letterSpacing: 0.6, marginHorizontal: 6, marginBottom: 10 }}>COMPROBANTES ({pays.length})</AppText>
         {pays.length === 0 ? <Empty icon="receipt" text="Sin comprobantes aún" pad={30} /> : (
           <View style={{ gap: 10 }}>
-            {pays.map((p, i) => <PaymentCard key={p.id} p={p} i={i} total={o.totalCif} onView={viewProof} />)}
+            {pays.map((p, i) => <PaymentCard key={p.id} p={p} i={i} total={o.totalCif} onView={() => viewProof(p)} />)}
           </View>
         )}
       </View>

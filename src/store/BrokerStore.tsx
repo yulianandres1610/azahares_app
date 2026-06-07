@@ -29,18 +29,19 @@ export const BK_CLIENT_STATUS: Record<BkClientStatusKey, { label: string; color:
 };
 
 // ── estados de orden (backend) → etiqueta/color + índice de pipeline ──
+// Etiquetas idénticas a la web (SALES_ORDER_STATUS_LABEL).
 export const BK_ORDER_STATUS: Record<SalesOrderStatus, { label: string; color: string }> = {
   draft: { label: 'Borrador', color: colors.ink40 },
   cotizacion_sent: { label: 'Cotización enviada', color: colors.accent },
   cotizacion_accepted: { label: 'Cotización aceptada', color: colors.navy500 },
   quote_sent: { label: 'Oferta enviada', color: colors.accent },
   quote_signed: { label: 'Oferta firmada', color: colors.navy700 },
-  pending_client_approval: { label: 'Esperando cliente', color: colors.accent },
+  pending_client_approval: { label: 'Pendiente aprobación cliente', color: colors.accent },
   invoiced: { label: 'Facturada', color: colors.amber },
-  payment_uploaded: { label: 'Pago subido', color: colors.amber },
+  payment_uploaded: { label: 'Pago en revisión', color: colors.amber },
   paid: { label: 'Pagada', color: colors.success },
-  purchase_ordered: { label: 'En compra', color: colors.navy500 },
-  shipping: { label: 'En tránsito', color: colors.navy700 },
+  purchase_ordered: { label: 'Compra emitida', color: colors.navy500 },
+  shipping: { label: 'En despacho', color: colors.navy700 },
   delivered: { label: 'Entregada', color: colors.success },
   cancelled: { label: 'Cancelada', color: colors.error },
 };

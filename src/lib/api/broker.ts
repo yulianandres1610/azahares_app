@@ -147,12 +147,14 @@ export interface CreateSalesOrderPayload {
 
 // Pagos (resumen de la orden — shape real de /sales-orders/{id}/payments)
 export type PaymentRowStatus = 'uploaded' | 'verified' | 'rejected';
+export interface PaymentProof { id: string; url: string | null; filename: string | null }
 export interface PaymentRow {
   id: string;
   amount: number;
   method: PaymentMethod;
   reference: string | null;
   status: PaymentRowStatus;
+  proofs: PaymentProof[];
   proofUrl: string | null;
   proofFilename: string | null;
   uploadedAt: string;

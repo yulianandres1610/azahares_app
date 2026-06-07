@@ -282,6 +282,13 @@ export function Header({
 }
 
 // ── Button ───────────────────────────────────────────────────
+// true si los hijos son texto (string/number) o un array de solo texto —
+// en cuyo caso hay que envolverlos en <Text> (React entrega "Hola {x}" como array).
+function isTextLike(children: React.ReactNode): boolean {
+  if (typeof children === 'string' || typeof children === 'number') return true;
+  if (Array.isArray(children)) return children.every((c) => c == null || c === false || typeof c === 'string' || typeof c === 'number');
+  return false;
+}
 type ButtonVariant = 'primary' | 'accent' | 'success' | 'soft' | 'ghost' | 'outline' | 'danger';
 export function Button({
   children,
@@ -339,7 +346,7 @@ export function Button({
       ) : (
         <>
           {icon && <Icon name={icon} size={size === 'sm' ? 17 : 20} color={s.fg} />}
-          {typeof children === 'string' ? (
+          {isTextLike(children) ? (
             <AppText weight="600" style={{ color: s.fg, fontSize, letterSpacing: 0.2 }}>
               {children}
             </AppText>
