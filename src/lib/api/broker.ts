@@ -232,13 +232,32 @@ export interface BrokerDashboardSummary {
   recentSalesOrders: { id: string; orderNumber: string; invoiceNumber: string | null; clientName: string | null; status: string; totalCif: number; createdAt: string }[];
 }
 
-// Tracking
-export interface TrackingMilestone { event: string; code: string | null; date: string | null; location: string | null; status: 'actual' | 'estimated' | 'pending' }
-export interface TrackingResult {
-  bookingNo: string; scrapedAt: string; currentStatus: string | null; lastLocation: string | null;
-  eta: string | null; vesselName: string | null; voyage: string | null; containerNumber: string | null;
-  milestones: TrackingMilestone[]; bookingFound?: boolean;
+// Tracking público por token (mismo que la web — timeline desde la creación)
+export type TrackingStep =
+  | 'order_placed' | 'quote_sent' | 'quote_accepted' | 'invoice_issued' | 'payment_received'
+  | 'po_sent_to_supplier' | 'supplier_accepted' | 'supplier_processing' | 'booking_requested'
+  | 'booking_confirmed' | 'container_assigned' | 'container_loaded' | 'bol_issued'
+  | 'dispatched' | 'arrived_at_destination' | 'delivered';
+export interface TrackingTimelineEvent { step: TrackingStep; at: string | null; meta?: { catNumbers?: string[] } }
+export interface PublicTrackingContainer {
+  id: string; containerNumber: string; status: string; productName: string | null; poOrderNumber: string | null;
+  lastLocation: { address: string | null; speedMph: number | null; seenAt: string } | null;
 }
+export interface PublicTrackingResponse {
+  order: { orderNumber: string; bookingNumber: string | null; status: string; createdAt: string; portOfLoading: string | null; portOfDischarge: string | null };
+  client: { legalName: string };
+  containers: PublicTrackingContainer[];
+  timeline: TrackingTimelineEvent[];
+  fetchedAt: string;
+}
+
+// Audit log (historial real de la orden)
+export interface AuditLog {
+  id: string; actorEmail: string; actorRole: string; action: string;
+  resourceType: string; resourceId: string | null; resourceName: string | null;
+  changes: Record<string, { before?: unknown; after?: unknown }> | null; createdAt: string;
+}
+export interface AuditLogPage { items: AuditLog[]; total: number }
 
 // ════════════════════════════════════════════════════════════════
 // Clientes
@@ -278,6 +297,8 @@ export const getPaymentProofUploadUrl = (id: string, fileName: string) =>
   apiFetch<{ uploadUrl: string; path: string; token: string }>(`/sales-orders/${id}/payment-proof/signed-url`, { method: 'POST', body: { fileName } });
 export const submitPayment = (id: string, payload: { method: PaymentMethod; proofUrl: string; proofFilename: string }) =>
   apiFetch<SalesOrderResponse>(`/sales-orders/${id}/payment`, { method: 'POST', body: payload });
+export const getPaymentProofDownloadUrl = (id: string) =>
+  apiFetch<{ url: string }>(`/sales-orders/${id}/payment-proof/download-url`);
 
 // ════════════════════════════════════════════════════════════════
 // Catálogo / productos / precios
@@ -307,4 +328,6 @@ export const createUser = (payload: { fullName: string; email: string; password:
 // Dashboard / tracking
 // ════════════════════════════════════════════════════════════════
 export const getBrokerDashboardSummary = () => apiFetch<BrokerDashboardSummary>('/dashboard/broker-summary');
-export const trackPo = (poId: string) => apiFetch<TrackingResult>(`/shipment-tracking/po/${poId}`);
+export const getPublicTracking = (token: string) => apiFetch<PublicTrackingResponse>(`/public/tracking/${token}`);
+export const listOrderAuditLogs = (orderId: string) =>
+  apiFetch<AuditLogPage>(`/audit-logs?resourceType=sale&resourceId=${encodeURIComponent(orderId)}&limit=100`);

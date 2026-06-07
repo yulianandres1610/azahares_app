@@ -2,18 +2,17 @@
 // send-cotizacion/send-quote/issue-invoice, pagos parciales con subida de
 // comprobante (signed-url + PUT), tracking (shipment-tracking) e historial.
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, RefreshControl, ScrollView, Share, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Circle, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, Chip, Field, IconButton, Screen, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { money, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
+import { BK_ORDER_STATUS, money, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
 import { putSigned } from '../../lib/api/containers';
-import type { OrderPaymentsSummary, PaymentRow, SalesOrderResponse, TrackingResult } from '../../lib/api/broker';
+import type { AuditLog, OrderPaymentsSummary, PaymentRow, PublicTrackingResponse, SalesOrderResponse, TrackingStep } from '../../lib/api/broker';
 import { FadeUp, Hero, HeroStat, OrderBadge, Pipeline, useBkNav, useCountUp } from './ui';
 
 export function BrokerOrders() {
@@ -185,8 +184,8 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
         <View style={{ padding: 16 }}>
           {tab === 'detail' && <DetailTab o={o} idx={idx} />}
           {tab === 'pagos' && <PagosTab o={o} idx={idx} onChanged={() => { load(); refreshOrders(); refreshDashboard(); }} />}
-          {tab === 'tracking' && <TrackingTab o={o} idx={idx} />}
-          {tab === 'log' && <LogTab o={o} idx={idx} />}
+          {tab === 'tracking' && <TrackingTab o={o} />}
+          {tab === 'log' && <LogTab o={o} />}
         </View>
       </ScrollView>
 
@@ -208,6 +207,14 @@ function DetailTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
   const shareDoc = (label: string) => Share.share({ message: `${label} · Orden ${o.orderNumber} · ${o.client?.legalName ?? ''} · ${money(o.totalCif)} USD` });
   return (
     <View style={{ gap: 14 }}>
+      <Card pad={0} style={{ overflow: 'hidden' }}>
+        <Head icon="fileText" title="Identificación" />
+        <KV label="Nº de orden" value={o.orderNumber} />
+        {!!o.invoiceNumber && <KV label="Nº de factura" value={o.invoiceNumber} />}
+        {!!o.bookingNumber && <KV label="Booking" value={o.bookingNumber} />}
+        <KV label="Estado" value={(BK_ORDER_STATUS as any)[o.status]?.label || o.status} last />
+      </Card>
+
       {docs.length > 0 && (
         <Card pad={0} style={{ overflow: 'hidden' }}>
           <Head icon="fileText" title="Documentos" />
@@ -293,6 +300,12 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
   const pct = o.totalCif ? Math.min(100, Math.round((verified / o.totalCif) * 100)) : 0;
   const pays = sum?.payments || [];
 
+  const viewProof = async () => {
+    haptic('light');
+    try { const { url } = await brokerApi.getPaymentProofDownloadUrl(o.id); if (url) await Linking.openURL(url); else showToast('Comprobante no disponible', 'warn'); }
+    catch (e: any) { showToast(e?.message || 'No se pudo abrir el comprobante', 'error'); }
+  };
+
   return (
     <View style={{ gap: 14 }}>
       <View style={{ borderRadius: radius.xl, overflow: 'hidden', ...shadows.card }}>
@@ -304,8 +317,8 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
             <View style={{ width: `${Math.min(100 - pct, Math.round((pendingSum / o.totalCif) * 100))}%`, height: 7, backgroundColor: alpha(colors.amber, 0.85) }} />
           </View>
           <View style={{ flexDirection: 'row', gap: 16, marginTop: 11 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><View style={{ width: 8, height: 8, borderRadius: 3, backgroundColor: '#34d399' }} /><AppText style={{ color: '#fff', fontSize: 12 }}>Verificado <AppText weight="700">{money(verified)}</AppText></AppText></View>
-            {pendingSum > 0 && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><View style={{ width: 8, height: 8, borderRadius: 3, backgroundColor: colors.amber }} /><AppText style={{ color: '#fff', fontSize: 12 }}>En revisión <AppText weight="700">{money(pendingSum)}</AppText></AppText></View>}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><View style={{ width: 8, height: 8, borderRadius: 3, backgroundColor: '#34d399' }} /><AppText style={{ color: '#fff', fontSize: 12 }}>Verificado <AppText weight="700" style={{ color: '#fff' }}>{money(verified)}</AppText></AppText></View>
+            {pendingSum > 0 && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><View style={{ width: 8, height: 8, borderRadius: 3, backgroundColor: colors.amber }} /><AppText style={{ color: '#fff', fontSize: 12 }}>En revisión <AppText weight="700" style={{ color: '#fff' }}>{money(pendingSum)}</AppText></AppText></View>}
           </View>
         </LinearGradient>
       </View>
@@ -325,7 +338,7 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
         <AppText weight="700" style={{ fontSize: 12, color: colors.ink40, letterSpacing: 0.6, marginHorizontal: 6, marginBottom: 10 }}>COMPROBANTES ({pays.length})</AppText>
         {pays.length === 0 ? <Empty icon="receipt" text="Sin comprobantes aún" pad={30} /> : (
           <View style={{ gap: 10 }}>
-            {pays.map((p, i) => <PaymentCard key={p.id} p={p} i={i} total={o.totalCif} />)}
+            {pays.map((p, i) => <PaymentCard key={p.id} p={p} i={i} total={o.totalCif} onView={viewProof} />)}
           </View>
         )}
       </View>
@@ -342,13 +355,13 @@ function PagosTab({ o, idx, onChanged }: { o: SalesOrderResponse; idx: number; o
   );
 }
 
-function PaymentCard({ p, i, total }: { p: PaymentRow; i: number; total: number }) {
+function PaymentCard({ p, i, total, onView }: { p: PaymentRow; i: number; total: number; onView: () => void }) {
   const st = PAY_ST[p.status] || PAY_ST.uploaded;
   const date = (() => { try { return new Date(p.uploadedAt).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } })();
   const methodLabel = ({ wired_transfer: 'Transferencia', usd_cash: 'Efectivo USD', usdt: 'USDT', wallet_credit: 'Saldo wallet' } as any)[p.method] || p.method;
   return (
     <FadeUp delay={i * 50}>
-      <Card pad={14}>
+      <Card pad={14} onPress={onView}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
           <View style={{ width: 44, height: 52, borderRadius: 9, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
             <Icon name="fileText" size={20} color={colors.ink40} />
@@ -373,6 +386,11 @@ function PaymentCard({ p, i, total }: { p: PaymentRow; i: number; total: number 
             <AppText style={{ flex: 1, fontSize: 12, color: colors.ink60 }}>{p.rejectionReason}</AppText>
           </View>
         )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 11, paddingTop: 11, borderTopWidth: 1, borderTopColor: colors.line }}>
+          <Icon name="eye" size={14} color={colors.accent} />
+          <AppText weight="600" style={{ flex: 1, fontSize: 12, color: colors.accent }}>Ver comprobante</AppText>
+          <Icon name="chevR" size={15} color={colors.ink30} />
+        </View>
       </Card>
     </FadeUp>
   );
@@ -461,75 +479,97 @@ function UploadSheet({ open, onClose, orderId, remaining, onDone, onError }: { o
   );
 }
 
-// ── Tracking (real, shipment-tracking) ─────────────────────────
-function TrackingTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
-  const po = o.purchaseOrders?.[0];
-  const [tr, setTr] = useState<TrackingResult | null>(null);
+// ── Tracking (timeline público real por token) ─────────────────
+const STEP_LABELS: Record<TrackingStep, string> = {
+  order_placed: 'Orden creada', quote_sent: 'Cotización enviada', quote_accepted: 'Cotización aceptada',
+  invoice_issued: 'Factura emitida', payment_received: 'Pago recibido', po_sent_to_supplier: 'PO enviada al proveedor',
+  supplier_accepted: 'Proveedor aceptó', supplier_processing: 'En preparación', booking_requested: 'Booking solicitado',
+  booking_confirmed: 'Booking confirmado', container_assigned: 'Contenedor asignado', container_loaded: 'Contenedor cargado',
+  bol_issued: 'BL emitido', dispatched: 'Despachado', arrived_at_destination: 'Llegó a destino', delivered: 'Entregado',
+};
+const fmtDateTime = (iso: string | null) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+
+function TrackingTab({ o }: { o: SalesOrderResponse }) {
+  const [tr, setTr] = useState<PublicTrackingResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(false);
-  const shipped = idx >= 8;
-
   useEffect(() => {
-    if (!po || !shipped) return;
+    if (!o.trackingToken) return;
     setLoading(true);
-    brokerApi.trackPo(po.id).then(setTr).catch(() => setErr(true)).finally(() => setLoading(false));
-  }, [po, shipped]);
+    brokerApi.getPublicTracking(o.trackingToken).then(setTr).catch(() => setErr(true)).finally(() => setLoading(false));
+  }, [o.trackingToken]);
 
-  if (!shipped) return <Empty icon="ship" text="El tracking se activa cuando la orden entra en compra y se genera la orden de compra al proveedor." />;
+  if (!o.trackingToken) return <Empty icon="ship" text="El tracking estará disponible cuando se confirme el booking de la orden." />;
   if (loading) return <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator color={colors.navy700} /></View>;
-  if (err || !tr) return <Empty icon="ship" text="No hay información de tracking disponible todavía." />;
+  if (err || !tr) return <Empty icon="ship" text="No se pudo cargar el tracking. Tirá para refrescar." />;
+
+  const events = tr.timeline || [];
+  const lastDone = events.reduce((acc, e, i) => (e.at ? i : acc), -1);
+  const statusLabel = (BK_ORDER_STATUS as any)[tr.order.status]?.label || tr.order.status;
 
   return (
     <View style={{ gap: 14 }}>
-      <MiniMap moving={idx === 9} />
+      {/* ruta + estado */}
       <View style={{ borderRadius: radius.xl, overflow: 'hidden' }}>
         <LinearGradient colors={gradients.navyDeep} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 18 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View>
-              <AppText weight="700" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, letterSpacing: 0.6 }}>LLEGADA ESTIMADA</AppText>
-              <AppText serif weight="600" style={{ fontSize: 24, color: '#fff', marginTop: 3 }}>{tr.eta || 'Por confirmar'}</AppText>
+            <View style={{ flex: 1 }}>
+              <AppText weight="700" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10.5, letterSpacing: 0.6 }}>ORIGEN</AppText>
+              <AppText weight="700" style={{ color: '#fff', fontSize: 14, marginTop: 2 }}>{tr.order.portOfLoading || '—'}</AppText>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <AppText weight="600" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Estado</AppText>
-              <AppText weight="700" style={{ fontSize: 14, color: '#34d399' }}>{tr.currentStatus || (idx >= 10 ? 'Entregada' : 'En ruta')}</AppText>
+            <Icon name="arrowR" size={20} color="rgba(255,255,255,0.6)" />
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <AppText weight="700" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10.5, letterSpacing: 0.6 }}>DESTINO</AppText>
+              <AppText weight="700" style={{ color: '#fff', fontSize: 14, marginTop: 2 }}>{tr.order.portOfDischarge || '—'}</AppText>
             </View>
           </View>
-          {!!tr.vesselName && <AppText style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12.5, marginTop: 12 }}>Buque {tr.vesselName}{tr.voyage ? ` · ${tr.voyage}` : ''}</AppText>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)' }}>
+            <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: '#34d399' }} />
+            <AppText weight="700" style={{ color: '#fff', fontSize: 13 }}>{statusLabel}</AppText>
+            {!!tr.order.bookingNumber && <AppText style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginLeft: 'auto' }}>Booking {tr.order.bookingNumber}</AppText>}
+          </View>
         </LinearGradient>
       </View>
 
-      {!!po && (
-        <Card pad={14}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: alpha(colors.navy500, 0.12), alignItems: 'center', justifyContent: 'center' }}><Icon name="ship" size={22} color={colors.navy700} /></View>
-            <View style={{ flex: 1 }}>
-              <AppText weight="700" style={{ fontSize: 14.5, color: colors.ink }}>{tr.bookingNo || po.orderNumber}</AppText>
-              <AppText style={{ fontSize: 12.5, color: colors.ink50, marginTop: 1 }}>{tr.lastLocation || 'En tránsito'}</AppText>
-            </View>
-          </View>
-        </Card>
+      {/* contenedores */}
+      {tr.containers.length > 0 && (
+        <View style={{ gap: 10 }}>
+          {tr.containers.map((c) => (
+            <Card key={c.id} pad={14}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: alpha(colors.navy500, 0.12), alignItems: 'center', justifyContent: 'center' }}><Icon name="layers" size={22} color={colors.navy700} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <AppText weight="700" style={{ fontSize: 14.5, color: colors.ink }}>{c.containerNumber}</AppText>
+                  <AppText style={{ fontSize: 12.5, color: colors.ink50, marginTop: 1 }}>{c.lastLocation?.address || c.productName || c.status}</AppText>
+                </View>
+              </View>
+            </Card>
+          ))}
+        </View>
       )}
 
+      {/* recorrido (timeline desde la creación) */}
       <View>
         <AppText weight="700" style={{ fontSize: 12, color: colors.ink40, letterSpacing: 0.6, marginHorizontal: 6, marginBottom: 12 }}>RECORRIDO</AppText>
-        {(tr.milestones || []).map((m, i, arr) => {
-          const done = m.status === 'actual';
-          const cur = m.status === 'estimated';
+        {events.map((e, i) => {
+          const done = !!e.at;
+          const cur = i === lastDone;
+          const cats = e.meta?.catNumbers;
           return (
-            <View key={i} style={{ flexDirection: 'row', gap: 13, alignItems: 'flex-start' }}>
+            <View key={e.step} style={{ flexDirection: 'row', gap: 13, alignItems: 'flex-start' }}>
               <View style={{ alignItems: 'center', alignSelf: 'stretch' }}>
-                <View style={{ width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', ...(done ? { backgroundColor: colors.success } : cur ? {} : { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.line }) }}>
+                <View style={{ width: 32, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', ...(cur ? {} : done ? { backgroundColor: colors.success } : { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.line }) }}>
                   {cur && <LinearGradient colors={gradients.navy} style={{ position: 'absolute', inset: 0 as any }} />}
-                  {done ? <Icon name="check" size={15} color="#fff" /> : <Icon name="ship" size={15} color={cur ? '#fff' : colors.ink40} />}
+                  {done ? <Icon name="check" size={15} color="#fff" /> : <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: colors.ink30 }} />}
                 </View>
-                {i < arr.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: done ? colors.success : colors.line, marginVertical: 3, minHeight: 26 }} />}
+                {i < events.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: done ? colors.success : colors.line, marginVertical: 3, minHeight: 22 }} />}
               </View>
-              <View style={{ flex: 1, paddingBottom: 20, paddingTop: 3 }}>
+              <View style={{ flex: 1, paddingBottom: 18, paddingTop: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <AppText weight="700" style={{ flex: 1, fontSize: 14, color: done || cur ? colors.ink : colors.ink60 }}>{m.event}</AppText>
-                  {!!m.date && <AppText weight="600" style={{ fontSize: 11.5, color: cur ? colors.success : colors.ink40 }}>{m.date}</AppText>}
+                  <AppText weight={done ? '700' : '600'} style={{ flex: 1, fontSize: 14, color: done ? colors.ink : colors.ink50 }}>{STEP_LABELS[e.step] || e.step}</AppText>
+                  {!!e.at && <AppText weight="600" style={{ fontSize: 11.5, color: cur ? colors.navy700 : colors.ink40 }}>{fmtDateTime(e.at)}</AppText>}
                 </View>
-                {!!m.location && <AppText style={{ fontSize: 12.5, color: colors.ink50, marginTop: 2 }}>{m.location}</AppText>}
+                {!!cats?.length && <AppText style={{ fontSize: 12, color: colors.accent, marginTop: 2 }}>CAT {cats.join(', ')}</AppText>}
               </View>
             </View>
           );
@@ -539,27 +579,66 @@ function TrackingTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
   );
 }
 
-function MiniMap({ moving }: { moving: boolean }) {
-  return (
-    <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: 160 }}>
-      <LinearGradient colors={['#cfe0f5', '#acc6ec']} style={{ flex: 1 }}>
-        <Svg width="100%" height="160" viewBox="0 0 320 160">
-          <Path d="M58 124 L128 96 L192 64 L262 36" stroke="rgba(13,27,61,0.45)" strokeWidth={3} strokeDasharray="2 7" strokeLinecap="round" fill="none" />
-          <Circle cx={58} cy={124} r={6} fill={colors.navy700} />
-          <Circle cx={moving ? 192 : 262} cy={moving ? 64 : 36} r={9} fill={colors.navy700} stroke="#fff" strokeWidth={3} />
-        </Svg>
-      </LinearGradient>
-      <View style={{ position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.86)' }}>
-        <Icon name="mapPin2" size={12} color={colors.error} /><AppText weight="700" style={{ fontSize: 11, color: colors.ink }}>La Habana</AppText>
-      </View>
-    </View>
-  );
+// ── Historial (audit log real, con fallback) ───────────────────
+const HIST_STATUS: Record<string, string> = {
+  draft: 'Borrador', cotizacion_sent: 'Cotización enviada', cotizacion_accepted: 'Cotización aceptada',
+  quote_sent: 'Oferta enviada', quote_signed: 'Oferta firmada', pending_client_approval: 'Esperando cliente',
+  invoiced: 'Factura emitida', payment_uploaded: 'Comprobante cargado', paid: 'Pagada',
+  purchase_ordered: 'PO generada', shipping: 'En tránsito', delivered: 'Entregada', cancelled: 'Cancelada',
+};
+function describeAudit(log: AuditLog): { title: string; desc?: string } {
+  const st = log.changes?.status;
+  const after = st && typeof st.after === 'string' ? st.after : null;
+  if (after) return { title: HIST_STATUS[after] || `Estado: ${after}`, desc: log.actorEmail };
+  if (log.action === 'create') return { title: 'Orden creada', desc: log.actorEmail };
+  if (log.action === 'delete') return { title: 'Orden eliminada', desc: log.actorEmail };
+  if (log.action === 'upload') return { title: 'Archivo cargado', desc: log.actorEmail };
+  return { title: 'Actualización', desc: log.actorEmail };
 }
 
-// ── Historial (timestamps reales de la orden) ──────────────────
-function LogTab({ o, idx }: { o: SalesOrderResponse; idx: number }) {
-  const fmt = (iso: string | null) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
-  const entries: { k: string; date: string; on: boolean }[] = [
+function LogTab({ o }: { o: SalesOrderResponse }) {
+  const [logs, setLogs] = useState<AuditLog[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    brokerApi.listOrderAuditLogs(o.id)
+      .then((p) => { if (alive) setLogs(p.items || []); })
+      .catch(() => { if (alive) setLogs(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [o.id]);
+
+  if (loading) return <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator color={colors.navy700} /></View>;
+
+  const fmt = (iso: string | null) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+
+  // audit log real (más recientes primero)
+  if (logs && logs.length > 0) {
+    const sorted = [...logs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return (
+      <View style={{ paddingTop: 4 }}>
+        {sorted.map((log, i) => {
+          const m = describeAudit(log);
+          return (
+            <View key={log.id} style={{ flexDirection: 'row', gap: 13, alignItems: 'flex-start' }}>
+              <View style={{ alignItems: 'center', alignSelf: 'stretch' }}>
+                <View style={{ width: 11, height: 11, borderRadius: 999, marginTop: 5, backgroundColor: i === 0 ? colors.accent : colors.navy500, ...(i === 0 ? { borderWidth: 3, borderColor: alpha(colors.accent, 0.28) } : {}) }} />
+                {i < sorted.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: colors.line, marginVertical: 3, minHeight: 20 }} />}
+              </View>
+              <View style={{ flex: 1, paddingBottom: 18 }}>
+                <AppText weight="600" style={{ fontSize: 13.5, color: colors.ink }}>{m.title}</AppText>
+                <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>{fmt(log.createdAt)}{m.desc ? ` · ${m.desc}` : ''}</AppText>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
+  // fallback: timeline derivado de los timestamps de la orden
+  const idx = orderIdx(o.status);
+  const entries = [
     { k: 'Orden creada', date: fmt(o.createdAt), on: true },
     { k: 'Cotización enviada', date: '', on: !!o.cotizacionToken || idx >= 1 },
     { k: 'Oferta firmada', date: fmt(o.quoteSignedAt), on: !!o.quoteSignedAt || idx >= 4 },
