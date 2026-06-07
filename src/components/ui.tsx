@@ -6,6 +6,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   PressableProps,
@@ -825,6 +826,54 @@ export function Segmented({
           </Tap>
         );
       })}
+    </View>
+  );
+}
+
+// ── Slider (barra deslizable simple) ─────────────────────────
+export function Slider({
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  color = colors.navy700,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  color?: string;
+}) {
+  const [w, setW] = useState(1);
+  const wRef = useRef(1);
+  wRef.current = w;
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const fromX = (x: number) => {
+    const ratio = Math.min(1, Math.max(0, x / wRef.current));
+    const raw = min + ratio * (max - min);
+    return clamp(Math.round(raw / step) * step);
+  };
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => onChange(fromX(e.nativeEvent.locationX)),
+      onPanResponderMove: (e) => onChange(fromX(e.nativeEvent.locationX)),
+    }),
+  ).current;
+  const pct = ((clamp(value) - min) / (max - min)) * 100;
+  return (
+    <View
+      onLayout={(e) => setW(e.nativeEvent.layout.width)}
+      {...pan.panHandlers}
+      style={{ height: 30, justifyContent: 'center' }}
+    >
+      <View style={{ height: 5, borderRadius: 999, backgroundColor: colors.line }}>
+        <View style={{ height: 5, borderRadius: 999, width: `${pct}%`, backgroundColor: color }} />
+      </View>
+      <View style={{ position: 'absolute', left: `${pct}%`, marginLeft: -11, width: 22, height: 22, borderRadius: 999, backgroundColor: colors.surface, ...shadows.sm, borderWidth: 2, borderColor: color }} />
     </View>
   );
 }

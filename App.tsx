@@ -9,11 +9,12 @@ import { AppProvider, useApp } from './src/store/AppContext';
 import { ToastHost } from './src/components/ui';
 import { Splash, Login, Forgot, OTP, Biometric, Pending } from './src/screens/auth/AuthScreens';
 import { MainShell } from './src/screens/app/MainShell';
+import { BrokerShell } from './src/screens/broker/BrokerShell';
 
 type AuthSub = 'login' | 'forgot';
 
 function Root() {
-  const { phase, toast, signOut, unlock, configOk, showToast, t } = useApp();
+  const { phase, me, toast, signOut, unlock, configOk, showToast, t } = useApp();
   const [sub, setSub] = useState<AuthSub>('login');
   const [minSplash, setMinSplash] = useState(true);
 
@@ -47,7 +48,8 @@ function Root() {
   } else if (phase === 'pending') {
     content = <Pending />;
   } else {
-    content = <MainShell />;
+    const isBroker = me?.role === 'broker_owner' || me?.role === 'broker_seller';
+    content = isBroker ? <BrokerShell /> : <MainShell />;
     dark = false;
   }
 
