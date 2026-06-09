@@ -279,6 +279,23 @@ export const inviteClient = (payload: { taxId: string; sendVia: 'whatsapp' | 'em
 export const resendClientInvitation = (clientId: string, payload: { sendVia: 'whatsapp' | 'email' | 'manual'; sendTo?: string }) =>
   apiFetch<{ token: string; link: string; delivered: boolean; deliveryError?: string }>(`/clients/${clientId}/resend-invitation`, { method: 'POST', body: payload });
 
+// Editar datos del cliente. El broker puede actualizar identificación,
+// dirección y contactos; status/brokerId quedan reservados al admin Azahares.
+export interface UpdateClientPayload {
+  legalName?: string;
+  tradeName?: string;
+  taxId?: string;
+  address?: {
+    street?: string; number?: string; betweenStreets?: string; neighborhood?: string;
+    municipality?: string; province?: string; zip?: string; notes?: string;
+  };
+  contact?: { firstName?: string; lastName?: string; email?: string; phone?: string };
+  legalRep?: { firstName?: string; lastName?: string; email?: string; phone?: string };
+  notes?: string;
+}
+export const updateClient = (id: string, payload: UpdateClientPayload) =>
+  apiFetch<ClientResponse>(`/clients/${id}`, { method: 'PATCH', body: payload });
+
 // ════════════════════════════════════════════════════════════════
 // Órdenes de venta
 // ════════════════════════════════════════════════════════════════

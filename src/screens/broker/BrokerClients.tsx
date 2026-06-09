@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/tokens';
 import { Icon } from '../../components/Icon';
-import { AppText, Button, Card, Chip, Field, IconButton, Screen, Tap, haptic } from '../../components/ui';
+import { AppText, Button, Card, Chip, Field, IconButton, Screen, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
 import { BK_CLIENT_STATUS, money, useBroker, brokerApi, type BkClientStatusKey, type UIClient } from '../../store/BrokerStore';
 import { clientStatusKey } from '../../store/BrokerStore';
@@ -305,12 +305,13 @@ function Row({ label, value, valueNode, last }: { label: string; value?: string;
 
 // ══ Detalle de cliente ═════════════════════════════════════════
 export function ClientDetail({ id, onClose }: { id: string; onClose: () => void }) {
-  const { orders } = useBroker();
+  const { orders, refreshClients } = useBroker();
   const { showToast } = useApp();
   const nav = useBkNav();
   const hf = useHeaderFill();
   const [c, setC] = useState<ClientResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     brokerApi.getClient(id).then((r) => { if (alive) { setC(r); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
@@ -338,7 +339,7 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
         <Hero padBottom={22}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <IconButton name="chevL" variant="glassDark" onPress={onClose} />
-            <IconButton name="edit" variant="glassDark" onPress={() => showToast('Editar cliente en la web', 'info')} />
+            <IconButton name="edit" variant="glassDark" onPress={() => setEditOpen(true)} />
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
             <View style={{ width: 60, height: 60, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' }}>
@@ -410,7 +411,169 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
         </View>
       </Animated.ScrollView>
       {hf.fill}
+      <EditClientSheet
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        client={c}
+        onSaved={(updated) => { setC(updated); refreshClients(); }}
+      />
     </Screen>
+  );
+}
+
+// ── Editar cliente — identificación, dirección y contactos (PATCH /clients/:id) ──
+function EditClientSheet({
+  open,
+  onClose,
+  client,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  client: ClientResponse;
+  onSaved: (updated: ClientResponse) => void;
+}) {
+  const { showToast } = useApp();
+  const [busy, setBusy] = useState(false);
+  // Identificación
+  const [legalName, setLegalName] = useState('');
+  const [tradeName, setTradeName] = useState('');
+  const [taxId, setTaxId] = useState('');
+  // Dirección
+  const [street, setStreet] = useState('');
+  const [number, setNumber] = useState('');
+  const [betweenStreets, setBetweenStreets] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [municipality, setMunicipality] = useState('');
+  const [province, setProvince] = useState('');
+  const [zip, setZip] = useState('');
+  // Contacto
+  const [cFirst, setCFirst] = useState('');
+  const [cLast, setCLast] = useState('');
+  const [cEmail, setCEmail] = useState('');
+  const [cPhone, setCPhone] = useState('');
+  // Representante legal
+  const [rFirst, setRFirst] = useState('');
+  const [rLast, setRLast] = useState('');
+  const [rEmail, setREmail] = useState('');
+  const [rPhone, setRPhone] = useState('');
+  // Notas
+  const [notes, setNotes] = useState('');
+
+  // Hidrata el formulario cada vez que se abre con el cliente actual.
+  useEffect(() => {
+    if (!open) return;
+    setLegalName(client.legalName || '');
+    setTradeName(client.tradeName || '');
+    setTaxId(client.taxId || '');
+    setStreet(client.address.street || '');
+    setNumber(client.address.number || '');
+    setBetweenStreets(client.address.betweenStreets || '');
+    setNeighborhood(client.address.neighborhood || '');
+    setMunicipality(client.address.municipality || '');
+    setProvince(client.address.province || '');
+    setZip(client.address.zip || '');
+    setCFirst(client.contact.firstName || '');
+    setCLast(client.contact.lastName || '');
+    setCEmail(client.contact.email || '');
+    setCPhone(client.contact.phone || '');
+    setRFirst(client.legalRep.firstName || '');
+    setRLast(client.legalRep.lastName || '');
+    setREmail(client.legalRep.email || '');
+    setRPhone(client.legalRep.phone || '');
+    setNotes(client.notes || '');
+  }, [open, client]);
+
+  const save = async () => {
+    if (!legalName.trim()) { showToast('La razón social es obligatoria', 'error'); return; }
+    if (!street.trim() || !municipality.trim() || !province.trim()) {
+      showToast('Calle, municipio y provincia son obligatorios', 'error');
+      return;
+    }
+    if (zip.trim() && !/^\d{5}$/.test(zip.trim())) { showToast('El ZIP debe tener 5 dígitos', 'error'); return; }
+    setBusy(true);
+    // undefined cuando el campo va vacío para no pisar con cadenas vacías.
+    const u = (v: string) => { const t = v.trim(); return t ? t : undefined; };
+    try {
+      const updated = await brokerApi.updateClient(client.id, {
+        legalName: legalName.trim(),
+        tradeName: u(tradeName),
+        taxId: u(taxId),
+        address: {
+          street: street.trim(),
+          number: u(number),
+          betweenStreets: u(betweenStreets),
+          neighborhood: u(neighborhood),
+          municipality: municipality.trim(),
+          province: province.trim(),
+          zip: u(zip),
+        },
+        contact: { firstName: u(cFirst), lastName: u(cLast), email: u(cEmail), phone: u(cPhone) },
+        legalRep: { firstName: u(rFirst), lastName: u(rLast), email: u(rEmail), phone: u(rPhone) },
+        notes: u(notes),
+      });
+      onSaved(updated);
+      haptic('success');
+      showToast('Cliente actualizado', 'success');
+      onClose();
+    } catch (e: any) {
+      showToast(e?.message || 'No se pudo guardar', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Editar cliente">
+      <View style={{ paddingHorizontal: 16, paddingBottom: 24, gap: 14 }}>
+        <FormLabel>Identificación</FormLabel>
+        <Field label="Razón social" icon="building" value={legalName} onChangeText={setLegalName} autoCapitalize="words" />
+        <Field label="Nombre comercial" value={tradeName} onChangeText={setTradeName} autoCapitalize="words" />
+        <Field label="NIT" icon="key" value={taxId} onChangeText={(v) => setTaxId(v.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
+
+        <FormLabel>Dirección</FormLabel>
+        <Field label="Calle" icon="map" value={street} onChangeText={setStreet} autoCapitalize="words" />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}><Field label="Número" value={number} onChangeText={setNumber} /></View>
+          <View style={{ flex: 1 }}><Field label="ZIP" value={zip} onChangeText={(v) => setZip(v.replace(/[^\d]/g, ''))} keyboardType="number-pad" /></View>
+        </View>
+        <Field label="Entre calles" value={betweenStreets} onChangeText={setBetweenStreets} autoCapitalize="words" />
+        <Field label="Reparto / barrio" value={neighborhood} onChangeText={setNeighborhood} autoCapitalize="words" />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}><Field label="Municipio" value={municipality} onChangeText={setMunicipality} autoCapitalize="words" /></View>
+          <View style={{ flex: 1 }}><Field label="Provincia" value={province} onChangeText={setProvince} autoCapitalize="words" /></View>
+        </View>
+
+        <FormLabel>Contacto operativo</FormLabel>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}><Field label="Nombre" value={cFirst} onChangeText={setCFirst} autoCapitalize="words" /></View>
+          <View style={{ flex: 1 }}><Field label="Apellido" value={cLast} onChangeText={setCLast} autoCapitalize="words" /></View>
+        </View>
+        <Field label="Email" icon="mail" value={cEmail} onChangeText={setCEmail} keyboardType="email-address" />
+        <Field label="Teléfono" value={cPhone} onChangeText={setCPhone} keyboardType="phone-pad" />
+
+        <FormLabel>Representante legal</FormLabel>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}><Field label="Nombre" value={rFirst} onChangeText={setRFirst} autoCapitalize="words" /></View>
+          <View style={{ flex: 1 }}><Field label="Apellido" value={rLast} onChangeText={setRLast} autoCapitalize="words" /></View>
+        </View>
+        <Field label="Email" icon="mail" value={rEmail} onChangeText={setREmail} keyboardType="email-address" />
+        <Field label="Teléfono" value={rPhone} onChangeText={setRPhone} keyboardType="phone-pad" />
+
+        <FormLabel>Notas</FormLabel>
+        <Field label="Notas internas" value={notes} onChangeText={setNotes} autoCapitalize="sentences" />
+
+        <Button variant="primary" icon="check" loading={busy} onPress={save} style={{ marginTop: 6 }}>Guardar cambios</Button>
+      </View>
+    </Sheet>
+  );
+}
+
+function FormLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <AppText weight="700" style={{ fontSize: 12, color: colors.ink40, letterSpacing: 0.6, marginTop: 6, marginLeft: 2 }}>
+      {String(children).toUpperCase()}
+    </AppText>
   );
 }
 
