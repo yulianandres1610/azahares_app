@@ -1,6 +1,6 @@
 // Perfil — fiel a screens-profile.jsx (hero navy, secciones, sheets).
-import React, { useEffect, useState } from 'react';
-import { Image, Modal, Pressable, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,14 @@ import { AppText, Avatar, CheckMark, Field, IconButton, Screen, Sheet, Tap, hapt
 import { deviceLocale } from '../../i18n';
 import { useApp } from '../../store/AppContext';
 import { updateMe, uploadAvatar, deleteAvatar } from '../../lib/api/me';
+import {
+  connectWhatsapp,
+  disconnectWhatsapp,
+  getMyWhatsappInstance,
+  refreshWhatsappStatus,
+  type WhatsappInstance,
+  type WhatsappQr,
+} from '../../lib/api/whatsapp';
 import { supabase } from '../../lib/supabase';
 
 const GLOBE = require('../../../assets/logo/logo-globe.png');
@@ -115,6 +123,9 @@ export function Profile() {
         <Row icon="lock" label={t('changePassword')} chevron onPress={() => setPwOpen(true)} last />
       </Section>
 
+      {/* whatsapp */}
+      <WhatsappSection />
+
       {/* account */}
       <Section title={t('account')}>
         <Row icon="settings" label={t('language')} value={langLabel} chevron onPress={() => setLangOpen(true)} />
@@ -188,6 +199,226 @@ export function Profile() {
         </View>
       </Sheet>
     </Screen>
+  );
+}
+
+// ── WhatsApp: muestra si la cuenta está vinculada (igual que el perfil web) ──
+function WhatsappSection() {
+  const { t, showToast } = useApp();
+  const es = t.locale === 'es';
+  const [inst, setInst] = useState<WhatsappInstance | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [qr, setQr] = useState<WhatsappQr | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const i = await getMyWhatsappInstance();
+      setInst(i);
+      // Conectado pero sin metadatos → pedir refresh para traer nombre/número/foto.
+      if (i?.status === 'connected' && !i.phoneNumber) {
+        try { setInst(await refreshWhatsappStatus()); } catch { /* silencioso */ }
+      }
+    } catch { /* silencioso — sección oculta el error */ } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // Mientras el sheet de conexión está abierto, sondea el estado cada 4s.
+  useEffect(() => {
+    if (!connectOpen) return;
+    const id = setInterval(async () => {
+      try {
+        const fresh = await refreshWhatsappStatus();
+        setInst(fresh);
+        if (fresh.status === 'connected') {
+          setConnectOpen(false);
+          setQr(null);
+          haptic('success');
+          showToast(es ? 'WhatsApp conectado' : 'WhatsApp connected', 'success');
+        }
+      } catch { /* no rompemos UX por un poll fallido */ }
+    }, 4000);
+    return () => clearInterval(id);
+  }, [connectOpen, es, showToast]);
+
+  // El QR de WhatsApp expira ~30s: lo regeneramos cada 28s mientras está visible.
+  useEffect(() => {
+    if (!connectOpen || !qr) return;
+    const id = setInterval(async () => {
+      try { setQr(await connectWhatsapp()); } catch { /* silencioso */ }
+    }, 28_000);
+    return () => clearInterval(id);
+  }, [connectOpen, qr]);
+
+  const openConnect = async () => {
+    haptic('light');
+    setConnectOpen(true);
+    setBusy(true);
+    try {
+      const q = await connectWhatsapp();
+      if (q.qrDataUrl === null && q.pairingCode === null) {
+        const fresh = await refreshWhatsappStatus();
+        setInst(fresh);
+        if (fresh?.status === 'connected') {
+          setConnectOpen(false);
+          showToast(es ? 'Ya estás conectado' : 'Already connected', 'success');
+        } else {
+          setQr(q);
+        }
+      } else {
+        setQr(q);
+        try { setInst(await refreshWhatsappStatus()); } catch { /* */ }
+      }
+    } catch (e: any) {
+      setConnectOpen(false);
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      setInst(await refreshWhatsappStatus());
+      haptic('success');
+      showToast(es ? 'Estado actualizado' : 'Status updated', 'success');
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doDisconnect = () => {
+    Alert.alert(
+      es ? 'Desconectar WhatsApp' : 'Disconnect WhatsApp',
+      es ? 'Vas a tener que escanear el QR de nuevo.' : "You'll have to scan the QR again.",
+      [
+        { text: es ? 'Cancelar' : 'Cancel', style: 'cancel' },
+        {
+          text: es ? 'Desconectar' : 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await disconnectWhatsapp();
+              setInst(await getMyWhatsappInstance());
+              setQr(null);
+              haptic('success');
+              showToast(es ? 'WhatsApp desconectado' : 'WhatsApp disconnected', 'success');
+            } catch (e: any) {
+              showToast(e?.message || t('errorGeneric'), 'error');
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const connected = inst?.status === 'connected';
+
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 22 }}>
+      <AppText weight="700" style={{ fontSize: 12, color: colors.ink40, letterSpacing: 0.6, marginHorizontal: 6, marginBottom: 9 }}>
+        WHATSAPP
+      </AppText>
+      <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', ...shadows.sm }}>
+        {loading ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 18 }}>
+            <ActivityIndicator color={colors.navy700} />
+            <AppText style={{ fontSize: 14, color: colors.ink50 }}>{es ? 'Cargando estado…' : 'Loading status…'}</AppText>
+          </View>
+        ) : connected ? (
+          <View style={{ paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {inst?.profilePictureUrl ? (
+                <Image source={{ uri: inst.profilePictureUrl }} style={{ width: 46, height: 46, borderRadius: 999 }} />
+              ) : (
+                <View style={{ width: 46, height: 46, borderRadius: 999, backgroundColor: alpha(colors.success, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="whatsapp" size={24} color={colors.success} />
+                </View>
+              )}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Icon name="checkCircle" size={13} color={colors.success} />
+                  <AppText weight="700" style={{ fontSize: 11, color: colors.success, letterSpacing: 0.5 }}>
+                    {(es ? 'CONECTADO' : 'CONNECTED')}
+                  </AppText>
+                </View>
+                <AppText weight="600" numberOfLines={1} style={{ fontSize: 15, color: colors.ink, marginTop: 1 }}>
+                  {inst?.displayName || (es ? 'WhatsApp activo' : 'WhatsApp active')}
+                </AppText>
+                {inst?.phoneNumber ? (
+                  <AppText style={{ fontSize: 13, color: colors.ink50 }}>{inst.phoneNumber}</AppText>
+                ) : null}
+              </View>
+              <Tap onPress={refresh} hapticKind="light" disabled={busy} style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: alpha(colors.navy500, 0.1), alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="refresh" size={18} color={colors.navy700} />
+              </Tap>
+            </View>
+            <Tap onPress={doDisconnect} hapticKind="medium" disabled={busy} style={{ height: 44, borderRadius: radius.md, backgroundColor: alpha(colors.error, 0.09), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <Icon name="logout" size={17} color={colors.error} />
+              <AppText weight="600" style={{ fontSize: 14, color: colors.error }}>{es ? 'Desconectar' : 'Disconnect'}</AppText>
+            </Tap>
+          </View>
+        ) : (
+          <Tap onPress={openConnect} hapticKind="light" disabled={busy} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, paddingVertical: 14 }}>
+            <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: alpha(colors.success, 0.12), alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="whatsapp" size={19} color={colors.success} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppText weight="600" style={{ fontSize: 15, color: colors.ink }}>{es ? 'Conectar WhatsApp' : 'Connect WhatsApp'}</AppText>
+              <AppText style={{ fontSize: 12.5, color: colors.ink50, marginTop: 1 }}>{es ? 'Sin vincular' : 'Not linked'}</AppText>
+            </View>
+            <Icon name="chevR" size={18} color={colors.ink30} />
+          </Tap>
+        )}
+      </View>
+      <AppText style={{ fontSize: 11.5, color: colors.ink40, marginTop: 8, marginHorizontal: 6, lineHeight: 16 }}>
+        {connected
+          ? (es
+              ? 'Tu WhatsApp está vinculado. Las facturas, ofertas y órdenes salen desde este número.'
+              : 'Your WhatsApp is linked. Invoices, quotes and orders are sent from this number.')
+          : (es
+              ? 'Vinculá tu WhatsApp para enviar documentos a tus clientes desde la plataforma.'
+              : 'Link your WhatsApp to send documents to your clients from the platform.')}
+      </AppText>
+
+      {/* sheet de conexión por QR */}
+      <Sheet open={connectOpen} onClose={() => { setConnectOpen(false); setQr(null); }} title={es ? 'Conectar WhatsApp' : 'Connect WhatsApp'}>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 28, gap: 16, alignItems: 'center' }}>
+          {qr?.qrDataUrl ? (
+            <Image source={{ uri: qr.qrDataUrl }} style={{ width: 232, height: 232, borderRadius: 16, backgroundColor: '#fff' }} />
+          ) : (
+            <View style={{ width: 232, height: 232, borderRadius: 16, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <ActivityIndicator color={colors.navy700} />
+              <AppText style={{ fontSize: 13, color: colors.ink50 }}>{es ? 'Generando QR…' : 'Generating QR…'}</AppText>
+            </View>
+          )}
+          {qr?.pairingCode ? (
+            <AppText style={{ fontSize: 12.5, color: colors.ink50 }}>
+              {es ? 'Código: ' : 'Code: '}
+              <AppText weight="700" style={{ color: colors.ink }}>{qr.pairingCode}</AppText>
+            </AppText>
+          ) : null}
+          <View style={{ width: '100%', backgroundColor: alpha(colors.navy500, 0.07), borderRadius: 14, padding: 14, gap: 4 }}>
+            <AppText weight="700" style={{ fontSize: 13, color: colors.navy900 }}>{es ? 'Cómo escanear' : 'How to scan'}</AppText>
+            <AppText style={{ fontSize: 12.5, color: colors.ink60, lineHeight: 18 }}>
+              {es
+                ? '1. Abrí WhatsApp en tu teléfono.\n2. Configuración → Dispositivos vinculados.\n3. Vincular un dispositivo y apuntá al QR.'
+                : '1. Open WhatsApp on your phone.\n2. Settings → Linked devices.\n3. Link a device and point at the QR.'}
+            </AppText>
+            <AppText style={{ fontSize: 10.5, color: colors.ink40, marginTop: 2 }}>{es ? 'El QR se renueva cada 30s.' : 'The QR refreshes every 30s.'}</AppText>
+          </View>
+        </View>
+      </Sheet>
+    </View>
   );
 }
 
