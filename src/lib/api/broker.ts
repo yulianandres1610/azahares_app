@@ -40,6 +40,9 @@ export interface ClientResponse {
   notes: string | null;
   priceList: { id: string; name: string } | null;
   broker: { id: string; legalName: string } | null;
+  // Usuario del portal ya vinculado (registro completado). Si existe, NO se
+  // reenvía link — el cliente ya entró aunque su KYC siga "Sin aprobar".
+  clientUser: { id: string; email: string; fullName: string | null } | null;
   documentsCount: number;
   documentsApprovedCount: number;
   documentsRejectedCount: number;

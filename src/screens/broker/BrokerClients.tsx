@@ -325,7 +325,11 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
   const kyc = ({ unapproved: 'Sin enviar', review: 'En revisión', approved: 'Aprobado', rejected: 'Rechazado', suspended: 'Suspendido' } as Record<BkClientStatusKey, string>)[statusKey];
   const phone = c.contact.phone || c.legalRep.phone || '—';
   const email = c.contact.email || c.legalRep.email || '—';
-  const isPending = statusKey === 'unapproved' || statusKey === 'review';
+  // "Registro pendiente" ≠ "Sin aprobar": el reenvío de link solo aplica cuando
+  // el cliente NO completó el registro (no tiene usuario de portal y hay un
+  // token de invitación pendiente). Si ya entró, el estado KYC puede seguir
+  // "Sin aprobar" pero no se reenvía nada.
+  const isPending = !c.clientUser && !!c.pendingRegistration;
 
   return (
     <Screen scroll={false} padTop={false}>
