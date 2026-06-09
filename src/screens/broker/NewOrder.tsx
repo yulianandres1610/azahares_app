@@ -1,7 +1,7 @@
 // Wizard de nueva orden — crea una orden REAL (POST /sales-orders) con cliente
 // aprobado, producto del catálogo del día, contenedores y cargos navieros.
 import React, { useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/tokens';
@@ -21,7 +21,6 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
   const items = catalog?.items || [];
   const [productId, setProductId] = useState(items[0]?.id || '');
   const [containers, setContainers] = useState(1);
-  const [price, setPrice] = useState('');
   const [creating, setCreating] = useState(false);
 
   const approvedClients = clients.filter((c) => c.statusKey === 'approved');
@@ -36,7 +35,9 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
     for (const t of sorted) if (containers >= t.containers) p = t.price;
     return p;
   })();
-  const unitPrice = Number(price) > 0 ? Number(price) : tierPrice;
+  // El precio lo fija el catálogo del día (por volumen). El broker NO puede
+  // modificar precios — solo elige producto y cantidad.
+  const unitPrice = tierPrice;
   const qty = containers * (product?.unitsPerContainer || 24000);
   const fob = Math.round(qty * unitPrice);
   const flete = Math.round(fob * 0.14), thcd = 2400, ispd = 1800, seguro = Math.round(fob * 0.05);
@@ -107,7 +108,7 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                   {items.map((p) => {
                     const on = product?.id === p.id;
                     return (
-                      <Tap key={p.id} hapticKind="select" onPress={() => { setProductId(p.id); setPrice(''); }}
+                      <Tap key={p.id} hapticKind="select" onPress={() => setProductId(p.id)}
                         style={{ paddingVertical: 11, paddingHorizontal: 14, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: on ? colors.navy700 : colors.surface, ...(on ? {} : { borderWidth: 1.5, borderColor: colors.line }) }}>
                         <Icon name={p.icon as any} size={17} color={on ? '#fff' : colors.navy700} />
                         <AppText weight="600" style={{ fontSize: 13, color: on ? '#fff' : colors.ink }}>{p.name}</AppText>
@@ -140,7 +141,7 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                 </View>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <View style={{ flex: 1 }}><Field2b label="Volumen total" value={qty.toLocaleString() + ' ' + (product?.unit || 'L')} /></View>
-                  <View style={{ flex: 1 }}><Field label={`Precio/${product?.unit || 'u'} (USD)`} icon="dollar" value={price || tierPrice.toFixed(2)} onChangeText={(v) => setPrice(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" /></View>
+                  <View style={{ flex: 1 }}><Field2b label={`Precio/${product?.unit || 'u'} (USD)`} value={`$${tierPrice.toFixed(2)}`} hint="Fijado por el catálogo" /></View>
                 </View>
               </Card>
               <Summary label="Subtotal FOB" value={money(fob)} />
@@ -218,13 +219,15 @@ function CounterBtn({ onPress, disabled, minus }: { onPress: () => void; disable
     </Tap>
   );
 }
-function Field2b({ label, value }: { label: string; value: string }) {
+function Field2b({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <View>
       <AppText weight="600" style={{ fontSize: 13, color: colors.ink60, marginBottom: 7 }}>{label}</AppText>
-      <View style={{ height: 52, justifyContent: 'center', paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.bg }}>
+      <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.bg }}>
         <AppText weight="700" style={{ fontSize: 14, color: colors.ink }}>{value}</AppText>
+        {hint ? <Icon name="lock" size={13} color={colors.ink40} /> : null}
       </View>
+      {hint ? <AppText style={{ fontSize: 10.5, color: colors.ink40, marginTop: 4 }}>{hint}</AppText> : null}
     </View>
   );
 }
