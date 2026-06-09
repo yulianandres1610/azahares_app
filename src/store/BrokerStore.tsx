@@ -117,17 +117,18 @@ function mapCatalog(cat: api.SalesCatalog, sparks: Record<string, { spark: numbe
     items: cat.items.map((it) => {
       const sp = sparks[it.id] || { spark: [], change: 0 };
       const scales = it.containerScales || [];
-      const tiers: UICatalogTier[] = scales.map((s) => ({ label: `${s.containers}+ cont.`, price: s.fobUnitPrice, containers: s.containers }));
+      // Precio CIF (igual que el catálogo web): base + cargos navieros.
+      const tiers: UICatalogTier[] = scales.map((s) => ({ label: `${s.containers}+ cont.`, price: s.cifUnitPrice, containers: s.containers }));
       const rawPerContainer = it.innerQuantity && it.innerQuantity > 0
         ? it.innerQuantity
         : scales[0] && scales[0].containers > 0 ? Math.round(scales[0].totalLiters / scales[0].containers) : 24000;
       // tope de capacidad por contenedor 20 ft de combustible
       const perContainer = Math.min(rawPerContainer, maxPerContainer(it.unit));
       return {
-        id: it.id, name: it.name, code: it.sku, unit: it.unit, price: it.basicUnitPrice,
+        id: it.id, name: it.name, code: it.sku, unit: it.unit, price: it.cifUnitPrice,
         change: sp.change, icon: iconForCatalog(it),
-        spark: sp.spark.length ? sp.spark : [it.basicUnitPrice, it.basicUnitPrice],
-        tiers: tiers.length ? tiers : [{ label: '1+ cont.', price: it.basicUnitPrice, containers: 1 }],
+        spark: sp.spark.length ? sp.spark : [it.cifUnitPrice, it.cifUnitPrice],
+        tiers: tiers.length ? tiers : [{ label: '1+ cont.', price: it.cifUnitPrice, containers: 1 }],
         imageUrl: it.imageUrl, unitsPerContainer: perContainer,
       };
     }),

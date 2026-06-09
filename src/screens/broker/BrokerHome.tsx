@@ -39,6 +39,8 @@ export function BrokerHome() {
   const nav = useBkNav();
   const c = summaryCounts(dashboard);
   const insets = useSafeAreaInsets();
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [heroH, setHeroH] = useState(0);
   const [anim, setAnim] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceItem, setPriceItem] = useState<UICatalogItem | null>(null);
@@ -61,7 +63,14 @@ export function BrokerHome() {
           Status bar claro + franja navy fija detrás de la barra de estado para
           que se vea relleno también al scrollear (iOS). */}
       <StatusBar style="light" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 130 }}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}
+      >
+        <View onLayout={(e) => setHeroH(e.nativeEvent.layout.height)}>
         <Hero padBottom={0} padTopExtra={6}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -80,6 +89,7 @@ export function BrokerHome() {
           <HeroTotal total={c.totalSold} paid={c.paidSum} active={Math.max(0, c.quotesSum - c.paidSum)} run={anim} />
           {items.length > 0 && <Ticker items={items} />}
         </Hero>
+        </View>
 
         <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View>
@@ -156,14 +166,30 @@ export function BrokerHome() {
             <MiniStat icon="clock" label="Clientes pendientes" value={c.clientsPending} tone={colors.amber} onPress={() => nav.setTab('clients')} />
           </View>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
-      {/* Franja navy fija detrás del status bar: el header se ve relleno hasta
-          arriba y el contenido scrollea por debajo sin dejar el espacio claro. */}
+      {/* Franja navy detrás del status bar — SOLO aparece al scrollear (cuando el
+          Hero ya no cubre el status bar). Sin scroll el header navy se ve a pleno
+          (su propio degradado), sin diferencia de color. */}
       {insets.top > 0 && (
-        <View
+        <Animated.View
           pointerEvents="none"
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.navy900 }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: insets.top,
+            backgroundColor: colors.navy900,
+            opacity:
+              heroH > insets.top + 24
+                ? scrollY.interpolate({
+                    inputRange: [heroH - insets.top - 24, heroH - insets.top],
+                    outputRange: [0, 1],
+                    extrapolate: 'clamp',
+                  })
+                : 0,
+          }}
         />
       )}
 
