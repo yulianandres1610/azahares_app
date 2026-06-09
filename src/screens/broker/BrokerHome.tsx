@@ -2,6 +2,8 @@
 // /products/sales-catalog + price-history. Ticker, catálogo, KPIs, resumen.
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, RefreshControl, ScrollView, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinear, Path, Stop } from 'react-native-svg';
 import { alpha, colors, gradients, radius, shadows } from '../../theme/tokens';
@@ -36,6 +38,7 @@ export function BrokerHome() {
   const { dashboard, catalog, orders, refreshAll } = useBroker();
   const nav = useBkNav();
   const c = summaryCounts(dashboard);
+  const insets = useSafeAreaInsets();
   const [anim, setAnim] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [priceItem, setPriceItem] = useState<UICatalogItem | null>(null);
@@ -53,7 +56,11 @@ export function BrokerHome() {
   ];
 
   return (
-    <Screen padBottom={108} scroll={false}>
+    <Screen padBottom={108} scroll={false} padTop={false}>
+      {/* El header navy se rellena hasta arriba (el Hero ya maneja el inset).
+          Status bar claro + franja navy fija detrás de la barra de estado para
+          que se vea relleno también al scrollear (iOS). */}
+      <StatusBar style="light" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
         <Hero padBottom={0} padTopExtra={6}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -150,6 +157,15 @@ export function BrokerHome() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Franja navy fija detrás del status bar: el header se ve relleno hasta
+          arriba y el contenido scrollea por debajo sin dejar el espacio claro. */}
+      {insets.top > 0 && (
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: colors.navy900 }}
+        />
+      )}
 
       <PriceSheet p={priceItem} onClose={() => setPriceItem(null)} onQuote={() => { setPriceItem(null); nav.openOverlay({ type: 'newOrder' }); }} />
     </Screen>
