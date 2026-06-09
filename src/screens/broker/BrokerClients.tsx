@@ -308,6 +308,7 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
   const { orders } = useBroker();
   const { showToast } = useApp();
   const nav = useBkNav();
+  const hf = useHeaderFill();
   const [c, setC] = useState<ClientResponse | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -324,7 +325,6 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
   const kyc = ({ unapproved: 'Sin enviar', review: 'En revisión', approved: 'Aprobado', rejected: 'Rechazado', suspended: 'Suspendido' } as Record<BkClientStatusKey, string>)[statusKey];
   const phone = c.contact.phone || c.legalRep.phone || '—';
   const email = c.contact.email || c.legalRep.email || '—';
-  const hf = useHeaderFill();
   const isPending = statusKey === 'unapproved' || statusKey === 'review';
 
   return (
