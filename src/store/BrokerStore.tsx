@@ -74,7 +74,7 @@ export interface UIClient {
   docs: number; phone: string; email: string; ts: number; registered: boolean;
 }
 export interface UIOrder {
-  id: string; number: string; client: string; clientId: string | null;
+  id: string; number: string; invoiceNumber: string | null; client: string; clientId: string | null;
   status: SalesOrderStatus; idx: number; cif: number; date: string; ts: number;
   items: number; pricingChanged: boolean; cargo: 'fuel' | 'food';
 }
@@ -100,7 +100,7 @@ function mapClient(c: ClientListItem): UIClient {
 }
 function mapOrder(o: SalesOrderListItem): UIOrder {
   return {
-    id: o.id, number: o.orderNumber, client: o.client?.name || '—', clientId: o.client?.id || null,
+    id: o.id, number: o.orderNumber, invoiceNumber: o.invoiceNumber ?? null, client: o.client?.name || '—', clientId: o.client?.id || null,
     status: o.status, idx: orderIdx(o.status), cif: o.totalCif, date: fmtDate(o.createdAt),
     ts: new Date(o.createdAt).getTime(), items: o.itemsCount, pricingChanged: !!o.pricingInvalidatedAt, cargo: 'fuel',
   };

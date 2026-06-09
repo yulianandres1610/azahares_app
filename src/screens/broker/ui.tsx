@@ -3,6 +3,7 @@
 // Portado de app/broker-ui.jsx.
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, RadialGradient as SvgRadial, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,6 +86,63 @@ export function Hero({
       </LinearGradient>
     </View>
   );
+}
+
+// ── Header "relleno hasta arriba" reutilizable ─────────────────
+// Hace que el header navy (Hero) llegue hasta el borde superior (status bar):
+//  - El Screen debe usar padTop={false} (el Hero ya maneja el inset).
+//  - StatusBar claro para que la hora/batería se vean sobre el navy.
+//  - Una franja navy detrás del status bar que SOLO aparece al scrollear
+//    (cuando el Hero ya no cubre el status bar) → sin scroll se ve el degradado
+//    real del Hero, sin diferencia de color.
+//
+// Uso en cada pantalla:
+//   const hf = useHeaderFill();
+//   <Screen scroll={false} padTop={false}>
+//     <Animated.ScrollView {...hf.scrollProps} ...>
+//       <View {...hf.heroLayout}><Hero>…</Hero></View>
+//       …
+//     </Animated.ScrollView>
+//     {hf.fill}
+//   </Screen>
+export function useHeaderFill() {
+  const insets = useSafeAreaInsets();
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [heroH, setHeroH] = useState(0);
+  const onScroll = useRef(
+    Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true }),
+  ).current;
+  const fill = (
+    <>
+      <StatusBar style="light" />
+      {insets.top > 0 && (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: insets.top,
+            backgroundColor: colors.navy900,
+            opacity:
+              heroH > insets.top + 24
+                ? scrollY.interpolate({
+                    inputRange: [heroH - insets.top - 24, heroH - insets.top],
+                    outputRange: [0, 1],
+                    extrapolate: 'clamp',
+                  })
+                : 0,
+          }}
+        />
+      )}
+    </>
+  );
+  return {
+    scrollProps: { onScroll, scrollEventThrottle: 16 },
+    heroLayout: { onLayout: (e: any) => setHeroH(e.nativeEvent.layout.height) },
+    fill,
+  };
 }
 
 // ── badges de estado ───────────────────────────────────────────

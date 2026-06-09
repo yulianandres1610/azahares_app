@@ -9,7 +9,7 @@ import { AppText, Button, Card, IconButton, Screen, Segmented, Sheet, Tap, hapti
 import { useApp } from '../../store/AppContext';
 import { money, useBroker, brokerApi } from '../../store/BrokerStore';
 import type { WalletTx } from '../../lib/api/broker';
-import { FadeUp, Hero, useCountUp } from './ui';
+import { FadeUp, Hero, useCountUp, useHeaderFill } from './ui';
 
 const MOVE_META: Record<string, { icon: string; label: string }> = {
   commission: { icon: 'percent', label: 'Comisión' },
@@ -107,9 +107,12 @@ export function BrokerWallet() {
     return <Screen padBottom={108}><View style={{ paddingTop: 120, alignItems: 'center' }}><ActivityIndicator color={colors.navy700} /></View></Screen>;
   }
 
+  const hf = useHeaderFill();
+
   return (
-    <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+    <Screen padBottom={108} scroll={false} padTop={false}>
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+        <View {...hf.heroLayout}>
         <Hero padBottom={22}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <AppText serif weight="600" style={{ fontSize: 26, color: '#fff' }}>Wallet</AppText>
@@ -140,6 +143,7 @@ export function BrokerWallet() {
             </Tap>
           </View>
         </Hero>
+        </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10 }}>
           <AppText serif weight="600" style={{ fontSize: 18, color: colors.ink }}>Movimientos</AppText>
@@ -151,7 +155,8 @@ export function BrokerWallet() {
           {moves.length === 0 && <View style={{ alignItems: 'center', paddingVertical: 36 }}><Icon name="wallet" size={36} color={colors.ink40} /><AppText style={{ fontSize: 14, color: colors.ink40, marginTop: 10 }}>Sin movimientos todavía</AppText></View>}
           {moves.map((m, i) => <MoveRow key={m.id} m={m} i={i} />)}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
 
       <CashoutSheet open={sheet} onClose={() => setSheet(false)} max={wallet?.balance ?? 0}
         onSubmit={async (amount, bank) => {

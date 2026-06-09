@@ -1,6 +1,6 @@
 // Equipo (solo owner): usuarios REALES (GET /users) + alta (POST /users).
 import React, { useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Animated, RefreshControl, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, RadialGradient as SvgRadial, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import { Icon } from '../../components/Icon';
 import { AppText, Avatar, Button, Card, Field, IconButton, Screen, Slider, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
 import { useBroker, brokerApi } from '../../store/BrokerStore';
-import { CountryCode, FadeUp, Hero, HeroStat, UserBadge, useBkNav } from './ui';
+import { CountryCode, FadeUp, Hero, HeroStat, UserBadge, useBkNav, useHeaderFill } from './ui';
 
 function genPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
@@ -42,10 +42,12 @@ export function BrokerUsers() {
 
   const active = users.filter((u) => u.status === 'active').length;
   const onRefresh = async () => { setRefreshing(true); await refreshUsers(); setRefreshing(false); };
+  const hf = useHeaderFill();
 
   return (
-    <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+    <Screen padBottom={108} scroll={false} padTop={false}>
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+        <View {...hf.heroLayout}>
         <Hero>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <AppText serif weight="600" style={{ fontSize: 26, color: '#fff' }}>Equipo</AppText>
@@ -57,6 +59,7 @@ export function BrokerUsers() {
             <HeroStat value={users.filter((u) => u.status === 'invited').length} label="Invitados" tone={colors.amber} />
           </View>
         </Hero>
+        </View>
 
         <View style={{ padding: 16, paddingBottom: 0 }}>
           <Field icon="search" placeholder="Buscar usuario" value={q} onChangeText={setQ} right={q ? <IconButton name="x" variant="plain" iconSize={16} size={32} onPress={() => setQ('')} /> : undefined} />
@@ -85,7 +88,8 @@ export function BrokerUsers() {
             ))}
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
     </Screen>
   );
 }

@@ -2,7 +2,7 @@
 // send-cotizacion/send-quote/issue-invoice, pagos parciales con subida de
 // comprobante (signed-url + PUT), tracking (shipment-tracking) e historial.
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Linking, RefreshControl, ScrollView, Share, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
@@ -14,7 +14,7 @@ import { useApp } from '../../store/AppContext';
 import { BK_ORDER_STATUS, money, maxPerContainer, orderIdx, useBroker, brokerApi, type UIOrder } from '../../store/BrokerStore';
 import { putSigned } from '../../lib/api/containers';
 import type { AuditLog, OrderPaymentsSummary, PaymentRow, PublicTrackingResponse, SalesOrderResponse, SalesOrderStatus, TrackingStep } from '../../lib/api/broker';
-import { FadeUp, Hero, HeroStat, OrderBadge, Pipeline, useBkNav, useCountUp } from './ui';
+import { FadeUp, Hero, HeroStat, OrderBadge, Pipeline, useBkNav, useCountUp, useHeaderFill } from './ui';
 
 const PENDING_STATUSES: SalesOrderStatus[] = ['draft', 'cotizacion_sent', 'cotizacion_accepted', 'quote_sent', 'quote_signed', 'pending_client_approval', 'invoiced', 'payment_uploaded'];
 const COMPLETED_STATUSES: SalesOrderStatus[] = ['paid', 'purchase_ordered', 'shipping', 'delivered'];
@@ -52,17 +52,19 @@ export function BrokerOrders() {
   const [refreshing, setRefreshing] = useState(false);
   const list = orders.filter((o) => {
     if (!orderMatchesFilter(o, filter)) return false;
-    if (q && !`${o.number} ${o.client}`.toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !`${o.number} ${o.invoiceNumber ?? ''} ${o.client}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }).sort((a, b) => b.ts - a.ts);
   const so = dashboard?.salesOrders;
   const paid = so?.invoicesPaid ?? orders.filter((o) => o.idx >= 7).length;
   const active = orders.filter((o) => o.idx >= 1 && o.idx < 10).length;
   const onRefresh = async () => { setRefreshing(true); await refreshOrders(); setRefreshing(false); };
+  const hf = useHeaderFill();
 
   return (
-    <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+    <Screen padBottom={108} scroll={false} padTop={false}>
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+        <View {...hf.heroLayout}>
         <Hero>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <AppText serif weight="600" style={{ fontSize: 26, color: '#fff' }}>Órdenes</AppText>
@@ -74,9 +76,10 @@ export function BrokerOrders() {
             <HeroStat value={so?.inShipping ?? 0} label="En tránsito" />
           </View>
         </Hero>
+        </View>
 
         <View style={{ padding: 16, paddingBottom: 0 }}>
-          <Field icon="search" placeholder="Buscar nº de orden o cliente" value={q} onChangeText={setQ} right={q ? <IconButton name="x" variant="plain" iconSize={16} size={32} onPress={() => setQ('')} /> : undefined} />
+          <Field icon="search" placeholder="Buscar orden, factura o cliente" value={q} onChangeText={setQ} right={q ? <IconButton name="x" variant="plain" iconSize={16} size={32} onPress={() => setQ('')} /> : undefined} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
           {ORDER_FILTERS.map((f) => (
@@ -92,7 +95,8 @@ export function BrokerOrders() {
             {list.map((o, i) => <OrderCard key={o.id} o={o} i={i} onPress={() => nav.openOverlay({ type: 'order', id: o.id })} />)}
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
     </Screen>
   );
 }
@@ -115,6 +119,7 @@ function OrderCard({ o, i, onPress }: { o: UIOrder; i: number; onPress: () => vo
               <AppText weight="700" style={{ fontSize: 15, color: colors.ink }}>{o.number}</AppText>
               {o.pricingChanged && <View style={{ backgroundColor: alpha(colors.amber, 0.16), paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999 }}><AppText weight="700" style={{ fontSize: 9.5, color: colors.amber }}>PRECIO CAMBIÓ</AppText></View>}
             </View>
+            {!!o.invoiceNumber && <AppText weight="600" style={{ fontSize: 11.5, color: colors.navy500, marginTop: 1 }}>{o.invoiceNumber}</AppText>}
             <AppText numberOfLines={1} style={{ fontSize: 12.5, color: colors.ink50, marginTop: 2 }}>{o.client}</AppText>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
@@ -147,6 +152,7 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
   const [tab, setTab] = useState('detail');
   const [run, setRun] = useState(false);
   const [busy, setBusy] = useState(false);
+  const hf = useHeaderFill();
 
   const load = useCallback(async () => {
     try { setO(await brokerApi.getSalesOrder(id)); } catch { /* */ } finally { setLoading(false); }
@@ -178,7 +184,8 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
 
   return (
     <Screen scroll={false} padTop={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: action && tab === 'detail' ? 100 : 40 }} keyboardShouldPersistTaps="handled">
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: action && tab === 'detail' ? 100 : 40 }} keyboardShouldPersistTaps="handled">
+        <View {...hf.heroLayout}>
         <Hero padBottom={18}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <IconButton name="chevL" variant="glassDark" onPress={onClose} />
@@ -195,6 +202,7 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
           </View>
           {idx >= 0 && <View style={{ marginTop: 20 }}><Pipeline state={o.status} /></View>}
         </Hero>
+        </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 2 }}>
           <View style={{ flexDirection: 'row', padding: 4, borderRadius: radius.md, backgroundColor: alpha(colors.ink, 0.06) }}>
@@ -215,7 +223,8 @@ export function OrderDetail({ id, onClose }: { id: string; onClose: () => void }
           {tab === 'tracking' && <TrackingTab o={o} />}
           {tab === 'log' && <LogTab o={o} />}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
 
       {action && tab === 'detail' && (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 16, paddingBottom: (insets.bottom || 0) + 16, backgroundColor: colors.bg }}>

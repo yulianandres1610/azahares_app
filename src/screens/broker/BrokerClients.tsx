@@ -1,7 +1,7 @@
 // Clientes — datos REALES: GET /clients, lookup-by-nit, POST /clients/invite,
 // GET /clients/{id}. Lista + wizard de invitación + detalle.
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/tokens';
@@ -11,7 +11,7 @@ import { useApp } from '../../store/AppContext';
 import { BK_CLIENT_STATUS, money, useBroker, brokerApi, type BkClientStatusKey, type UIClient } from '../../store/BrokerStore';
 import { clientStatusKey } from '../../store/BrokerStore';
 import type { ClientNitLookupResult, ClientResponse, InviteClientResult } from '../../lib/api/broker';
-import { CheckMark, ClientBadge, CountryCode, FadeUp, Hero, HeroStat, OrderBadge, WizardHeader, useBkNav } from './ui';
+import { CheckMark, ClientBadge, CountryCode, FadeUp, Hero, HeroStat, OrderBadge, WizardHeader, useBkNav, useHeaderFill } from './ui';
 
 const FILTERS: { k: string; label: string }[] = [
   { k: 'all', label: 'Todos' }, { k: 'unapproved', label: 'Sin aprobar' }, { k: 'review', label: 'En revisión' },
@@ -33,10 +33,12 @@ export function BrokerClients() {
   const active = clients.filter((c) => c.statusKey === 'approved').length;
   const pending = clients.filter((c) => c.statusKey === 'review' || c.statusKey === 'unapproved').length;
   const onRefresh = async () => { setRefreshing(true); await refreshClients(); setRefreshing(false); };
+  const hf = useHeaderFill();
 
   return (
-    <Screen padBottom={108} scroll={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+    <Screen padBottom={108} scroll={false} padTop={false}>
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy700} />}>
+        <View {...hf.heroLayout}>
         <Hero>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <AppText serif weight="600" style={{ fontSize: 26, color: '#fff' }}>Clientes</AppText>
@@ -48,6 +50,7 @@ export function BrokerClients() {
             <HeroStat value={pending} label="Pendientes" tone={colors.amber} />
           </View>
         </Hero>
+        </View>
 
         <View style={{ padding: 16, paddingBottom: 0 }}>
           <Field icon="search" placeholder="Buscar nombre o provincia" value={q} onChangeText={setQ}
@@ -75,7 +78,8 @@ export function BrokerClients() {
             {list.map((c, i) => <ClientCard key={c.id} c={c} i={i} onPress={() => nav.openOverlay({ type: 'client', id: c.id })} />)}
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
     </Screen>
   );
 }
@@ -320,10 +324,13 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
   const kyc = ({ unapproved: 'Sin enviar', review: 'En revisión', approved: 'Aprobado', rejected: 'Rechazado', suspended: 'Suspendido' } as Record<BkClientStatusKey, string>)[statusKey];
   const phone = c.contact.phone || c.legalRep.phone || '—';
   const email = c.contact.email || c.legalRep.email || '—';
+  const hf = useHeaderFill();
+  const isPending = statusKey === 'unapproved' || statusKey === 'review';
 
   return (
     <Screen scroll={false} padTop={false}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+      <Animated.ScrollView {...hf.scrollProps} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View {...hf.heroLayout}>
         <Hero padBottom={22}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <IconButton name="chevL" variant="glassDark" onPress={onClose} />
@@ -335,10 +342,15 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <AppText serif weight="600" style={{ fontSize: 21, color: '#fff', lineHeight: 24 }}>{c.legalName}</AppText>
-              <View style={{ marginTop: 8 }}><ClientBadge status={statusKey} size="sm" /></View>
+              {/* Badge legible sobre el navy: chip translúcido blanco + dot del estado. */}
+              <View style={{ marginTop: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, height: 24, paddingHorizontal: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)' }}>
+                <View style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: BK_CLIENT_STATUS[statusKey].color }} />
+                <AppText weight="600" style={{ fontSize: 12, color: '#fff' }}>{BK_CLIENT_STATUS[statusKey].label}</AppText>
+              </View>
             </View>
           </View>
         </Hero>
+        </View>
 
         <View style={{ padding: 16, gap: 14 }}>
           <Card pad={0} style={{ overflow: 'hidden' }}>
@@ -386,12 +398,64 @@ export function ClientDetail({ id, onClose }: { id: string; onClose: () => void 
             </View>
           )}
 
+          {isPending && <ResendInviteCard client={c} />}
+
           {statusKey === 'approved' && (
             <Button variant="primary" icon="send" onPress={() => nav.openOverlay({ type: 'newOrder', clientId: c.id })}>Nueva orden para {c.legalName.split(' ')[0]}</Button>
           )}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
+      {hf.fill}
     </Screen>
+  );
+}
+
+// Reenvío del link de registro cuando el cliente está pendiente. El envío por
+// WhatsApp usa el servicio sincronizado del backend (api revolution) — directo.
+function ResendInviteCard({ client }: { client: ClientResponse }) {
+  const { showToast } = useApp();
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ delivered: boolean; deliveryError?: string } | null>(null);
+  const phone = client.contact.phone || client.legalRep.phone || '';
+  const email = client.contact.email || client.legalRep.email || '';
+  const resend = async (via: 'whatsapp' | 'email') => {
+    setSending(true); haptic('medium');
+    try {
+      const sendTo = via === 'whatsapp' ? phone.replace(/\s/g, '') : email.trim();
+      const r = await brokerApi.resendClientInvitation(client.id, { sendVia: via, sendTo });
+      setResult(r);
+      showToast(
+        r.delivered
+          ? (via === 'whatsapp' ? 'Link enviado por WhatsApp' : 'Link enviado por email')
+          : (r.deliveryError ? `No se pudo enviar: ${r.deliveryError}` : 'Link generado'),
+        r.delivered ? 'success' : 'info',
+      );
+    } catch (e: any) {
+      showToast(e?.message || 'No se pudo reenviar el link', 'error');
+    } finally { setSending(false); }
+  };
+  return (
+    <Card pad={16}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: alpha(colors.amber, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="send" size={18} color={colors.amber} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppText weight="700" style={{ fontSize: 14.5, color: colors.ink }}>Registro pendiente</AppText>
+          <AppText style={{ fontSize: 12.5, color: colors.ink50, marginTop: 1 }}>Reenviá el link para que complete sus datos.</AppText>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+        {!!phone && <Button full={false} style={{ flex: 1 }} variant="primary" icon="whatsapp" loading={sending} onPress={() => resend('whatsapp')}>WhatsApp</Button>}
+        {!!email && <Button full={false} style={{ flex: 1 }} variant="ghost" icon="mail" disabled={sending} onPress={() => resend('email')}>Email</Button>}
+      </View>
+      {result && (
+        <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: result.delivered ? colors.success : colors.amber }} />
+          <AppText weight="600" style={{ fontSize: 12.5, color: result.delivered ? colors.success : colors.amber }}>{result.delivered ? 'Enviado correctamente' : 'Link generado — enviá manual si hace falta'}</AppText>
+        </View>
+      )}
+    </Card>
   );
 }
 
