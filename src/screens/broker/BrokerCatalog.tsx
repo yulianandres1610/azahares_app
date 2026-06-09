@@ -83,18 +83,24 @@ export function BrokerCatalog({ onClose }: { onClose: () => void }) {
     [cat],
   );
 
+  // Captura a tamaño exacto LETTER (816×1056 px) para que cada página llene
+  // la hoja sin franjas blancas al exportar.
   const capture = (ref: React.RefObject<View | null>) =>
-    captureRef(ref as React.RefObject<View>, { format: 'png', quality: 1, result: 'base64' });
+    captureRef(ref as React.RefObject<View>, { format: 'png', quality: 1, result: 'base64', width: 816, height: 1056 });
+
+  // El viewport fijo en 816px alinea el ancho CSS con el área imprimible de
+  // LETTER (612pt = 816px @96dpi); así width:100% llena la hoja completa.
+  const pdfHtml = (p1: string, p2: string | null) =>
+    `<!DOCTYPE html><html><head><meta name="viewport" content="width=816"/>
+      <style>*{margin:0;padding:0}html,body{width:816px}img{display:block;width:816px;height:1056px}.brk{page-break-before:always}</style></head><body>
+      <img src="data:image/png;base64,${p1}"/>
+      ${p2 ? `<div class="brk"></div><img src="data:image/png;base64,${p2}"/>` : ''}
+      </body></html>`;
 
   const buildPdf = async (): Promise<string> => {
     const p1 = await capture(minPageRef);
     const p2 = hasWholesale ? await capture(mayPageRef) : null;
-    const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <style>@page{margin:0}body{margin:0}img{display:block;width:100%}</style></head><body>
-      <img src="data:image/png;base64,${p1}"/>
-      ${p2 ? `<div style="page-break-before:always"></div><img src="data:image/png;base64,${p2}"/>` : ''}
-      </body></html>`;
-    const { uri } = await Print.printToFileAsync({ html, width: 612, height: 792 });
+    const { uri } = await Print.printToFileAsync({ html: pdfHtml(p1, p2) });
     return uri;
   };
 
