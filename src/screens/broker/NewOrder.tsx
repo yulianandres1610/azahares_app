@@ -8,7 +8,7 @@ import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/to
 import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, Field, Screen, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
-import { money, maxPerContainer, useBroker, brokerApi, type UICatalogItem } from '../../store/BrokerStore';
+import { money, maxPerContainer, useBroker, brokerApi, BK_CLIENT_STATUS, type UICatalogItem } from '../../store/BrokerStore';
 import { CheckMark, FadeUp, WizardHeader } from './ui';
 
 export function NewOrder({ clientId: initialClient, onClose }: { clientId?: string; onClose: () => void }) {
@@ -23,8 +23,14 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
   const [containers, setContainers] = useState(1);
   const [creating, setCreating] = useState(false);
 
-  const approvedClients = clients.filter((c) => c.statusKey === 'approved');
-  const client = approvedClients.find((c) => c.id === clientId);
+  // Mostramos TODOS los clientes (igual que la web): se puede crear orden para
+  // cualquiera. La orden queda en BORRADOR; la factura se emite después desde el
+  // detalle de la orden y, si el cliente no está aprobado, no se emite todavía.
+  // Ordenamos los aprobados primero para que sea más práctico.
+  const sortedClients = [...clients].sort(
+    (a, b) => (a.statusKey === 'approved' ? 0 : 1) - (b.statusKey === 'approved' ? 0 : 1),
+  );
+  const client = clients.find((c) => c.id === clientId);
   const product: UICatalogItem | undefined = items.find((p) => p.id === productId) || items[0];
 
   // precio por volumen: mejor tier cuyo umbral de contenedores <= elegidos
@@ -67,7 +73,7 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
     }
   };
   const next = () => { if (step < 3) { haptic('light'); setStep(step + 1); } else create(); };
-  const clientList = approvedClients.filter((c) => `${c.name}`.toLowerCase().includes(q.toLowerCase()));
+  const clientList = sortedClients.filter((c) => `${c.name}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <Screen scroll={false} padTop={false}>
@@ -76,11 +82,13 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
         <View style={{ padding: 16 }}>
           {step === 0 && (
             <FadeUp>
-              <Field icon="search" placeholder="Buscar cliente aprobado" value={q} onChangeText={setQ} />
+              <Field icon="search" placeholder="Buscar cliente" value={q} onChangeText={setQ} />
               <View style={{ gap: 9, marginTop: 14 }}>
-                {clientList.length === 0 && <AppText style={{ fontSize: 13, color: colors.ink50, textAlign: 'center', paddingVertical: 20 }}>No hay clientes aprobados. Invitá y aprobá un cliente primero.</AppText>}
+                {clientList.length === 0 && <AppText style={{ fontSize: 13, color: colors.ink50, textAlign: 'center', paddingVertical: 20 }}>{clients.length === 0 ? 'Aún no tenés clientes. Invitá uno primero.' : 'Sin resultados'}</AppText>}
                 {clientList.map((c) => {
                   const on = clientId === c.id;
+                  const approved = c.statusKey === 'approved';
+                  const meta = BK_CLIENT_STATUS[c.statusKey];
                   return (
                     <Tap key={c.id} hapticKind="select" onPress={() => setClientId(c.id)}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: radius.lg, backgroundColor: on ? alpha(colors.accent, 0.1) : colors.surface, ...(on ? { borderWidth: 2, borderColor: colors.accent } : shadows.sm) }}>
@@ -89,7 +97,13 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                       </LinearGradient>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <AppText weight="700" numberOfLines={1} style={{ fontSize: 14, color: colors.ink }}>{c.name}</AppText>
-                        <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 1 }}>{c.muni}, {c.prov}</AppText>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 }}>
+                          <AppText numberOfLines={1} style={{ fontSize: 12, color: colors.ink50, flexShrink: 1 }}>{c.muni}, {c.prov}</AppText>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: alpha(approved ? colors.success : meta.color, 0.13) }}>
+                            <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: approved ? colors.success : meta.color }} />
+                            <AppText weight="700" style={{ fontSize: 10.5, color: approved ? colors.success : meta.color }}>{approved ? 'Docs OK' : 'Docs pendientes'}</AppText>
+                          </View>
+                        </View>
                       </View>
                       {on && <CheckMark size={20} color={colors.accent} />}
                     </Tap>
@@ -178,10 +192,17 @@ export function NewOrder({ clientId: initialClient, onClose }: { clientId?: stri
                 <KV label="Cargos" value={money(charges)} />
                 <KV label="Total CIF" value={money(cif)} strong last />
               </Card>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
-                <Icon name="info" size={16} color={colors.accent} />
-                <AppText weight="500" style={{ fontSize: 13, color: colors.accent }}>La orden se crea en borrador, lista para cotizar.</AppText>
-              </View>
+              {client && client.statusKey !== 'approved' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 12, paddingVertical: 11, borderRadius: radius.md, backgroundColor: alpha(colors.amber, 0.1) }}>
+                  <Icon name="alert" size={16} color={colors.amber} />
+                  <AppText weight="500" style={{ flex: 1, fontSize: 12.5, color: colors.amber, lineHeight: 18 }}>El cliente todavía no está aprobado. La orden se crea en borrador; la factura se podrá emitir cuando el cliente esté aprobado.</AppText>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
+                  <Icon name="info" size={16} color={colors.accent} />
+                  <AppText weight="500" style={{ fontSize: 13, color: colors.accent }}>La orden se crea en borrador, lista para cotizar.</AppText>
+                </View>
+              )}
             </FadeUp>
           )}
         </View>
