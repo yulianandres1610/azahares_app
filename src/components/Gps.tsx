@@ -1,14 +1,73 @@
 // GPS por contenedor: mapa estilizado, card de ubicación (todos los estados),
 // hoja de activación y hoja de historial de recorrido. Portado de gps.jsx.
 import React, { useState } from 'react';
-import { ActivityIndicator, Animated, Linking, Pressable, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Linking, Pressable, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polyline, Rect, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import { alpha, colors, radius, shadows } from '../theme/tokens';
 import { Icon } from './Icon';
+import { GlobeSpinner } from './GlobeSpinner';
+import { useLocalImage } from './RemoteImage';
 import { AppText, Button, Card, Field, Sheet, Tap, haptic } from './ui';
 import { statusMeta, TYPES } from '../domain';
+import { MAPBOX_TOKEN } from '../config';
 import type { ContainerGps, GpsFix, GpsSync } from '../lib/api/types';
 import type { T } from '../i18n';
+
+// Codifica una polilínea (precisión 5) para el overlay path de Mapbox Static.
+function encodePolyline(pts: { lat: number; lng: number }[]): string {
+  let lastLat = 0, lastLng = 0, out = '';
+  const enc = (v: number) => {
+    let value = v < 0 ? ~(v << 1) : v << 1;
+    let s = '';
+    while (value >= 0x20) { s += String.fromCharCode((0x20 | (value & 0x1f)) + 63); value >>= 5; }
+    return s + String.fromCharCode(value + 63);
+  };
+  for (const p of pts) {
+    const lat = Math.round(p.lat * 1e5), lng = Math.round(p.lng * 1e5);
+    out += enc(lat - lastLat) + enc(lng - lastLng);
+    lastLat = lat; lastLng = lng;
+  }
+  return out;
+}
+
+// Mapa REAL vía Mapbox Static Images API. Descarga la imagen con expo-file-system
+// (useLocalImage) para evitar el cargador nativo que falla con New Architecture.
+function MapStatic({ fix, track, showRoute, status, type, height, color }: {
+  fix: GpsFix; track: GpsFix[]; showRoute: boolean; status: string; type: string; height: number; color: string;
+}) {
+  const tIcon = (TYPES[type] ?? TYPES.fuel).icon;
+  const W = 640;
+  const H = Math.max(160, Math.round((640 * height) / 360));
+  const col = color.replace('#', '');
+  let path = '';
+  if (showRoute && track.length > 1) {
+    const enc = encodeURIComponent(encodePolyline(track.map((p) => ({ lat: p.lat, lng: p.lng }))));
+    path = `path-4+1e3a8a-0.9(${enc}),pin-s+${col}(${fix.lng},${fix.lat})/auto`;
+  } else {
+    path = `${fix.lng},${fix.lat},14,0`;
+  }
+  const url = `https://api.mapbox.com/styles/v1/mapbox/light-v11/static/${path}/${W}x${H}@2x?padding=40&access_token=${MAPBOX_TOKEN}`;
+  const { uri } = useLocalImage(url);
+
+  return (
+    <View style={{ width: '100%', height, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#e9eef6' }}>
+      {uri ? (
+        <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <GlobeSpinner size={34} showHalo={false} />
+        </View>
+      )}
+      {/* En la vista centrada (sin ruta) el contenedor está al centro: pin propio. */}
+      {!showRoute && uri && (
+        <View style={{ position: 'absolute', left: '50%', top: '50%', transform: [{ translateX: -20 }, { translateY: -48 }] }}>
+          <View style={{ position: 'absolute', left: 20, bottom: -6, width: 54, height: 54, borderRadius: 999, marginLeft: -27, marginBottom: -27, backgroundColor: alpha(color, 0.22) }} />
+          <Pin color={color} icon={tIcon} moving={fix.speed > 0} />
+        </View>
+      )}
+    </View>
+  );
+}
 
 // ── Mapa estilizado tipo "Mapbox light + navy" (decorativo) ──────
 export function MapCanvas({
@@ -28,6 +87,24 @@ export function MapCanvas({
 }) {
   const meta = statusMeta(status);
   const tIcon = (TYPES[type] ?? TYPES.fuel).icon;
+
+  // Mapa REAL de Mapbox cuando hay token + coordenadas válidas. Si no, cae al
+  // render decorativo SVG de abajo (sin romper la UI).
+  const hasCoords = !!fix && Number.isFinite(fix.lat) && Number.isFinite(fix.lng) && (fix.lat !== 0 || fix.lng !== 0);
+  if (MAPBOX_TOKEN && hasCoords) {
+    return (
+      <MapStatic
+        fix={fix as GpsFix}
+        track={showRoute ? track : []}
+        showRoute={showRoute}
+        status={status}
+        type={type}
+        height={height}
+        color={meta.color}
+      />
+    );
+  }
+
   const W = 700;
   const H = Math.round((height / 360) * 700);
   const vlines = [0.14, 0.3, 0.46, 0.62, 0.78, 0.92];

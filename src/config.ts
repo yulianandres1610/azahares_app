@@ -9,6 +9,11 @@ export const API_URL =
 // Link público para el QR de la etiqueta (mismo dominio que la web).
 export const PUBLIC_WEB_URL = 'https://azaharesfuel.com';
 
+// Token público de Mapbox (pk.*) para la Static Images API del mapa de GPS.
+// Mismo token que usa la web (NEXT_PUBLIC_MAPBOX_TOKEN). Si está vacío, el
+// mapa cae al render decorativo SVG.
+export const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
+
 export const CONFIG_OK =
   SUPABASE_URL.includes('.supabase.co') &&
   !SUPABASE_URL.includes('xxxxxxxx') &&
