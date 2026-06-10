@@ -197,6 +197,22 @@ export function Home() {
           </View>
         </Tap>
       </FadeUp>
+
+      {/* Inventario de IBC totes */}
+      <FadeUp delay={170} style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <Tap onPress={() => nav.openOverlay({ type: 'ibcs' })} hapticKind="medium">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13, borderRadius: radius.lg, backgroundColor: colors.surface, padding: 16, ...shadows.card }}>
+            <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: alpha(colors.navy500, 0.12), alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="cube" size={23} color={colors.navy700} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <AppText weight="700" style={{ fontSize: 15.5, color: colors.ink }}>IBC · Inventario</AppText>
+              <AppText weight="500" style={{ fontSize: 12.5, color: colors.ink50, marginTop: 1 }}>Crear totes 1000 L, fotos e imprimir etiquetas</AppText>
+            </View>
+            <Icon name="chevR" size={20} color={colors.ink30} />
+          </View>
+        </Tap>
+      </FadeUp>
     </Screen>
   );
 }

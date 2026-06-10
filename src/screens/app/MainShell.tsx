@@ -17,6 +17,7 @@ import { NewContainer } from './NewContainer';
 import { Detail } from './Detail';
 import { Scan } from './Scan';
 import { Notifications } from './Notifications';
+import { IbcInventory } from './IbcInventory';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -193,6 +194,7 @@ function OverlayHost({ overlay, onClose }: { overlay: Overlay; onClose: () => vo
       {shown.type === 'detail' && <Detail id={shown.id} onClose={onClose} />}
       {shown.type === 'scan' && <Scan onClose={onClose} />}
       {shown.type === 'notifications' && <Notifications onClose={onClose} />}
+      {shown.type === 'ibcs' && <IbcInventory onClose={onClose} />}
     </Animated.View>
   );
 }

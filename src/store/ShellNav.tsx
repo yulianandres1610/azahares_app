@@ -2,7 +2,13 @@
 import React, { createContext, useContext } from 'react';
 
 export type TabId = 'home' | 'containers' | 'inspections' | 'profile';
-export type Overlay = { type: 'detail'; id: string } | { type: 'new' } | { type: 'scan' } | { type: 'notifications' } | null;
+export type Overlay =
+  | { type: 'detail'; id: string }
+  | { type: 'new' }
+  | { type: 'scan' }
+  | { type: 'notifications' }
+  | { type: 'ibcs' }
+  | null;
 
 export interface ShellNav {
   tab: TabId;
