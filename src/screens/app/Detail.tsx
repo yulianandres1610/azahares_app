@@ -572,6 +572,9 @@ function VisualPanel({
 }) {
   const { t, showToast } = useApp();
   const [uploads, setUploads] = useState<Record<string, number>>({});
+  const [unavailOpen, setUnavailOpen] = useState(false);
+  const [unavailReason, setUnavailReason] = useState('');
+  const [unavailBusy, setUnavailBusy] = useState(false);
   const byKind = useMemo(() => {
     const m: Record<string, string | null> = {};
     ins?.media.forEach((x) => (m[x.kind] = x.url));
@@ -638,7 +641,7 @@ function VisualPanel({
       </View>
 
       {editable && (
-        <View style={{ marginTop: 18 }}>
+        <View style={{ marginTop: 18, gap: 10 }}>
           <Button
             disabled={vc < 7}
             icon="check"
@@ -655,8 +658,50 @@ function VisualPanel({
           >
             {t('completeVisual')} {vc < 7 ? `(${left})` : ''}
           </Button>
+          <Button variant="danger" icon="alert" onPress={() => setUnavailOpen(true)}>
+            {t('markUnavailable')}
+          </Button>
         </View>
       )}
+
+      {/* Marcar NO DISPONIBLE — motivo obligatorio */}
+      <Sheet open={unavailOpen} onClose={() => !unavailBusy && setUnavailOpen(false)} title={t('markUnavailable')}>
+        <View style={{ gap: 14 }}>
+          <AppText style={{ fontSize: 13.5, color: colors.ink60, lineHeight: 19 }}>
+            {t('markUnavailableHint')}
+          </AppText>
+          <Field
+            label={t('reason')}
+            value={unavailReason}
+            onChangeText={setUnavailReason}
+            placeholder={t('reasonPlaceholder')}
+            autoCapitalize="sentences"
+            autoFocus
+          />
+          <Button
+            variant="danger"
+            icon="alert"
+            disabled={!unavailReason.trim() || unavailBusy}
+            onPress={async () => {
+              if (!ins || !unavailReason.trim()) return;
+              setUnavailBusy(true);
+              try {
+                await Insp.markUnavailable(ins.id, unavailReason.trim());
+                showToast(t('markedUnavailable'), 'success');
+                setUnavailOpen(false);
+                setUnavailReason('');
+                onChanged();
+              } catch (e: any) {
+                showToast(e?.message || t('errorGeneric'), 'error');
+              } finally {
+                setUnavailBusy(false);
+              }
+            }}
+          >
+            {t('markUnavailable')}
+          </Button>
+        </View>
+      </Sheet>
     </View>
   );
 }

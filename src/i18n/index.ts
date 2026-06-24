@@ -145,6 +145,12 @@ const STR: { en: Dict; es: Dict } = {
     thermalLabel: 'Thermal label',
     sharePrint: 'Share / Print',
     markAvailable: 'Mark available',
+    markUnavailable: 'Mark unavailable',
+    markUnavailableHint:
+      'The container will be removed from the available pool. State the reason (damage, leak, broken valve, etc.).',
+    markedUnavailable: 'Marked unavailable',
+    reason: 'Reason',
+    reasonPlaceholder: 'E.g. damaged valve, leak...',
     coaLater: 'COA uploads later (~2 days), also from history.',
     cycleHistory: 'Cycle history',
     markDelivered: 'Mark delivered',
@@ -405,6 +411,12 @@ const STR: { en: Dict; es: Dict } = {
     thermalLabel: 'Etiqueta térmica',
     sharePrint: 'Compartir / Imprimir',
     markAvailable: 'Marcar disponible',
+    markUnavailable: 'Marcar no disponible',
+    markUnavailableHint:
+      'El contenedor sale del pool de disponibles. Indicá el motivo (daño, fuga, válvula rota, etc.).',
+    markedUnavailable: 'Marcado como no disponible',
+    reason: 'Motivo',
+    reasonPlaceholder: 'Ej. válvula dañada, fuga...',
     coaLater: 'El COA se carga después (~2 días), también desde el historial.',
     cycleHistory: 'Historial de ciclos',
     markDelivered: 'Marcar entregado',
@@ -534,6 +546,7 @@ const STATUS_L = {
     delivered: 'Delivered',
     returning: 'In return',
     maintenance: 'Maintenance',
+    unavailable: 'Unavailable',
   },
   es: {
     visual_inspection: 'Inspección visual',
@@ -544,6 +557,7 @@ const STATUS_L = {
     delivered: 'Entregado',
     returning: 'En retorno',
     maintenance: 'Mantenimiento',
+    unavailable: 'No disponible',
   },
 } as const;
 

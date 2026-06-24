@@ -9,7 +9,7 @@ import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
 import type { Container } from '../../lib/api/types';
 
-const FILTERS = ['all', 'visual_inspection', 'refuel_inspection', 'available', 'in_transit', 'in_vessel', 'delivered', 'returning', 'maintenance'];
+const FILTERS = ['all', 'visual_inspection', 'refuel_inspection', 'available', 'in_transit', 'in_vessel', 'delivered', 'returning', 'maintenance', 'unavailable'];
 
 export function Containers() {
   const { t, containers, containersLoading, refreshContainers } = useApp();

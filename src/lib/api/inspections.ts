@@ -41,6 +41,14 @@ export function markAvailable(
   return apiFetch<ContainerInspection>(`/container-inspections/${id}/mark-available`, { method: 'POST', body: dto });
 }
 
+/** Marca el contenedor como NO DISPONIBLE (falló la inspección visual). */
+export function markUnavailable(id: string, reason: string): Promise<ContainerInspection> {
+  return apiFetch<ContainerInspection>(`/container-inspections/${id}/mark-unavailable`, {
+    method: 'POST',
+    body: { reason },
+  });
+}
+
 export function getInspectionLabel(id: string): Promise<InspectionLabelData> {
   return apiFetch<InspectionLabelData>(`/container-inspections/${id}/label`);
 }

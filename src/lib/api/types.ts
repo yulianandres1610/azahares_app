@@ -37,7 +37,8 @@ export type ContainerStatus =
   | 'in_vessel'
   | 'delivered'
   | 'returning'
-  | 'maintenance';
+  | 'maintenance'
+  | 'unavailable';
 
 // ── GPS (shape de UI, mapeado desde el ContainerGpsDto del backend) ──
 export type GpsSync = 'connected' | 'stale' | 'nodata' | 'error';

@@ -29,6 +29,7 @@ export const STATUS: Record<ContainerStatus, StatusMeta> = {
   delivered: { color: '#0ea5a0', icon: 'checkCircle' },
   returning: { color: '#8b6fe0', icon: 'refresh' },
   maintenance: { color: colors.error, icon: 'settings' },
+  unavailable: { color: colors.error, icon: 'alert' },
 };
 
 export const TYPES: Record<string, { label: string; icon: IconName }> = {
