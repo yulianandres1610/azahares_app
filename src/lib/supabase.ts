@@ -1,14 +1,15 @@
-// Cliente Supabase para React Native. Sesión persistida en AsyncStorage
-// (patrón oficial). El desbloqueo biométrico se gestiona a nivel de app.
+// Cliente Supabase para React Native. La sesión (incluye el refresh token
+// de larga duración) se persiste cifrada en expo-secure-store (Keychain /
+// Keystore) vía SecureStoreAdapter, no en AsyncStorage en texto plano.
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../config';
+import { SecureStoreAdapter } from './secure-storage';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: AsyncStorage,
+    storage: SecureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
