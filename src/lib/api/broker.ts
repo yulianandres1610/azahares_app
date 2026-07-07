@@ -226,7 +226,7 @@ export interface WalletTx {
   salesOrderId: string | null; cashoutId: string | null; description: string | null; createdAt: string;
 }
 export interface Cashout {
-  id: string; walletId: string; amount: number;
+  id: string; cashoutNumber: string | null; walletId: string; amount: number;
   status: 'requested' | 'processing' | 'completed' | 'rejected';
   requestedAt: string; processedAt: string | null; completedAt: string | null;
 }

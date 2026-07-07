@@ -234,7 +234,10 @@ function CashoutDetailSheet({ cashoutId, onClose }: { cashoutId: string | null; 
         {detail && (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <AppText serif weight="700" style={{ fontSize: 26, color: colors.ink }}>{money(detail.amount, true)}</AppText>
+              <View>
+                <AppText serif weight="700" style={{ fontSize: 26, color: colors.ink }}>{money(detail.amount, true)}</AppText>
+                {detail.cashoutNumber ? <AppText weight="700" style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>Orden {detail.cashoutNumber}</AppText> : null}
+              </View>
               <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(STATUS[detail.status]?.color || colors.ink, 0.13) }}>
                 <AppText weight="700" style={{ fontSize: 12, color: STATUS[detail.status]?.color || colors.ink }}>{STATUS[detail.status]?.label || detail.status}</AppText>
               </View>
