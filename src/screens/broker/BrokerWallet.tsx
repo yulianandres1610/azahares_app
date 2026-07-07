@@ -8,7 +8,7 @@ import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, IconButton, Screen, Segmented, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
 import { money, useBroker, brokerApi } from '../../store/BrokerStore';
-import type { CashoutDetail, WalletTx } from '../../lib/api/broker';
+import type { CashoutDetail, CashoutMethod, CashoutPayeeInput, Payee, WalletTx } from '../../lib/api/broker';
 import { FadeUp, Hero, useCountUp, useHeaderFill } from './ui';
 
 const MOVE_META: Record<string, { icon: string; label: string }> = {
@@ -167,10 +167,10 @@ export function BrokerWallet() {
       </Animated.ScrollView>
       {hf.fill}
 
-      <CashoutSheet open={sheet} onClose={() => setSheet(false)} max={available}
-        onSubmit={async (amount, notes) => {
+      <CashoutSheet open={sheet} onClose={() => setSheet(false)} max={available} brokerId={wallet?.ownerId || ''}
+        onSubmit={async (amount, notes, payee) => {
           if (!wallet) return;
-          try { await brokerApi.requestCashout(wallet.id, { amount, notes }); await refreshWallet(); showToast('Solicitud enviada · pendiente de aprobación', 'info'); }
+          try { await brokerApi.requestCashout(wallet.id, { amount, notes, payee }); await refreshWallet(); showToast('Solicitud enviada · pendiente de aprobación', 'info'); }
           catch (e: any) { showToast(e?.message || 'No se pudo solicitar', 'error'); }
         }} />
 
@@ -295,22 +295,50 @@ function FlowChip({ icon, label, value, tone, dim }: { icon: string; label: stri
   );
 }
 
-function CashoutSheet({ open, onClose, max, onSubmit }: { open: boolean; onClose: () => void; max: number; onSubmit: (amount: number, notes?: string) => Promise<void> }) {
+const COUNTRIES = ['United States', 'México', 'Colombia', 'Panamá', 'España', 'Rep. Dominicana', 'Otro'];
+const CO_METHODS: { value: CashoutMethod; label: string }[] = [
+  { value: 'wired', label: 'Wire' }, { value: 'ach', label: 'ACH' }, { value: 'cash', label: 'Efectivo' },
+];
+
+function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolean; onClose: () => void; max: number; brokerId: string; onSubmit: (amount: number, notes: string | undefined, payee: CashoutPayeeInput) => Promise<void> }) {
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setAmount(''); setNotes(''); } }, [open]);
+  const [payees, setPayees] = useState<Payee[]>([]);
+  const [payeeId, setPayeeId] = useState('');
+  const [method, setMethod] = useState<CashoutMethod>('wired');
+  const [country, setCountry] = useState('United States');
+  const [label, setLabel] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [account, setAccount] = useState('');
+  const [routing, setRouting] = useState('');
+  const [address, setAddress] = useState('');
+  useEffect(() => {
+    if (open) {
+      setAmount(''); setNotes(''); setPayeeId(''); setMethod('wired'); setCountry('United States');
+      setLabel(''); setBankName(''); setAccount(''); setRouting(''); setAddress('');
+      if (brokerId) brokerApi.listPayees(brokerId).then(setPayees).catch(() => setPayees([]));
+    }
+  }, [open, brokerId]);
   const n = Number(amount || 0);
-  const valid = n > 0 && n <= max && !busy;
+  const isNew = payeeId === '';
+  const isUsa = /usa|united states|estados unidos|^us$/i.test(country);
+  const isCash = method === 'cash';
+  const newOk = label.trim() && country && (isCash || (bankName.trim() && account.trim() && (!isUsa || (routing.trim() && address.trim()))));
+  const valid = n > 0 && n <= max && !busy && (!isNew || newOk);
   const pct = [25, 50, 100];
   const submit = async () => {
     setBusy(true); haptic('success');
-    await onSubmit(n, notes.trim() || undefined);
+    const chosen = payees.find((p) => p.id === payeeId);
+    const payee: CashoutPayeeInput = isNew
+      ? { method, country, label: label.trim(), bankName: isCash ? undefined : bankName.trim(), accountNumber: isCash ? undefined : account.trim(), routing: isCash ? undefined : (routing.trim() || undefined), bankAddress: isCash ? undefined : (address.trim() || undefined) }
+      : { payeeId, method, country: chosen?.country || 'United States', label: chosen?.label || '' };
+    await onSubmit(n, notes.trim() || undefined, payee);
     setBusy(false); onClose();
   };
   return (
     <Sheet open={open} onClose={onClose} title="Solicitar cashout">
-      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 16 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 14 }}>
         <View>
           <AppText weight="600" style={{ fontSize: 13, color: colors.ink60, marginBottom: 7, marginLeft: 2 }}>Monto (máx {money(max, true)})</AppText>
           <View style={{ justifyContent: 'center' }}>
@@ -326,14 +354,52 @@ function CashoutSheet({ open, onClose, max, onSubmit }: { open: boolean; onClose
             ))}
           </View>
         </View>
-        <TextInput value={notes} onChangeText={setNotes} placeholder="Nota (opcional)" placeholderTextColor={colors.ink40} multiline style={[inputStyle, { height: 72, paddingTop: 14, textAlignVertical: 'top' }]} />
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingHorizontal: 2 }}>
-          <Icon name="info" size={16} color={colors.accent} />
-          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>Los datos bancarios los coordina el equipo de Azahares al procesar tu solicitud. Queda pendiente hasta su aprobación.</AppText>
-        </View>
+
+        <AppText weight="700" style={{ fontSize: 12, color: colors.ink60, marginLeft: 2 }}>DESTINATARIO (a dónde depositar)</AppText>
+        {payees.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Chip active={isNew} label="＋ Nuevo" onPress={() => setPayeeId('')} />
+            {payees.map((p) => <Chip key={p.id} active={payeeId === p.id} label={p.label} onPress={() => setPayeeId(p.id)} />)}
+          </View>
+        )}
+
+        {isNew && (
+          <>
+            <Segmented value={method} onChange={(v) => setMethod(v as CashoutMethod)} options={CO_METHODS} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {COUNTRIES.map((c) => <Chip key={c} active={country === c} label={c} onPress={() => setCountry(c)} />)}
+            </View>
+            {country === 'Otro' && <TextInput value={country === 'Otro' ? '' : country} onChangeText={setCountry} placeholder="País" placeholderTextColor={colors.ink40} style={inputStyle} />}
+            <TextInput value={label} onChangeText={setLabel} placeholder={isCash ? 'Nombre / beneficiario' : isUsa ? 'Nombre de la empresa' : 'Beneficiario'} placeholderTextColor={colors.ink40} style={inputStyle} />
+            {!isCash && (
+              <>
+                <TextInput value={bankName} onChangeText={setBankName} placeholder="Nombre del banco" placeholderTextColor={colors.ink40} style={inputStyle} />
+                <TextInput value={account} onChangeText={setAccount} placeholder="Número de cuenta" placeholderTextColor={colors.ink40} keyboardType="number-pad" style={inputStyle} />
+                {isUsa ? (
+                  <>
+                    <TextInput value={routing} onChangeText={setRouting} placeholder="Número de ruta (routing)" placeholderTextColor={colors.ink40} keyboardType="number-pad" style={inputStyle} />
+                    <TextInput value={address} onChangeText={setAddress} placeholder="Dirección" placeholderTextColor={colors.ink40} style={inputStyle} />
+                  </>
+                ) : (
+                  <TextInput value={address} onChangeText={setAddress} placeholder="Dirección (opcional)" placeholderTextColor={colors.ink40} style={inputStyle} />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        <TextInput value={notes} onChangeText={setNotes} placeholder="Nota (opcional)" placeholderTextColor={colors.ink40} multiline style={[inputStyle, { height: 64, paddingTop: 14, textAlignVertical: 'top' }]} />
         <Button variant="primary" icon="arrowUpR" disabled={!valid} loading={busy} onPress={submit}>Solicitar {n > 0 ? money(n) : ''}</Button>
       </View>
     </Sheet>
+  );
+}
+
+function Chip({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  return (
+    <Tap hapticKind="select" onPress={onPress} style={{ paddingHorizontal: 14, height: 34, borderRadius: 999, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: active ? colors.navy700 : colors.line, backgroundColor: active ? colors.navy700 : colors.surface }}>
+      <AppText weight="600" style={{ fontSize: 12.5, color: active ? '#fff' : colors.ink60 }}>{label}</AppText>
+    </Tap>
   );
 }
 
