@@ -201,7 +201,19 @@ export interface PriceListListItem {
 export type WalletTxKind = 'commission' | 'markup' | 'credit' | 'usage' | 'cashout' | 'cashout_reverted' | 'adjustment';
 export interface Wallet {
   id: string; ownerType: 'broker' | 'client'; ownerId: string; ownerName: string;
-  walletNumber: string; balance: number; currency: string; createdAt: string; updatedAt: string;
+  walletNumber: string; balance: number; reservedAmount: number; availableBalance: number;
+  currency: string; createdAt: string; updatedAt: string;
+}
+export type CashoutMethod = 'wired' | 'ach' | 'cash';
+export interface CashoutDisbursement {
+  id: string; cashoutId: string; method: CashoutMethod; amount: number; reference: string | null;
+  payeeLabel: string | null; bankName: string | null; accountHolder: string | null;
+  accountNumber: string | null; routing: string | null; swift: string | null;
+  proofUrl: string | null; paidAt: string | null; createdAt: string;
+}
+export interface CashoutDetail extends Cashout {
+  brokerName: string; disbursedAmount: number; notes: string | null; rejectionReason: string | null;
+  disbursements: CashoutDisbursement[];
 }
 export interface WalletTx {
   id: string; walletId: string; kind: WalletTxKind; amount: number; balanceAfter: number;
@@ -341,8 +353,10 @@ export const listPriceLists = () => apiFetch<PriceListListItem[]>('/price-lists'
 export const getMyWallet = () => apiFetch<Wallet | null>('/wallets/me');
 export const listWalletTransactions = (walletId: string, limit = 50) =>
   apiFetch<WalletTx[]>(`/wallets/${walletId}/transactions?limit=${limit}`);
-export const requestCashout = (walletId: string, payload: { amount: number; bankName?: string; bankAccountHolder?: string; bankAccountNumber?: string; notes?: string }) =>
+export const requestCashout = (walletId: string, payload: { amount: number; notes?: string }) =>
   apiFetch<Cashout>(`/wallets/${walletId}/cashout`, { method: 'POST', body: payload });
+export const getCashoutDetail = (id: string) =>
+  apiFetch<CashoutDetail>(`/accounting/cashouts/${id}`);
 
 // ════════════════════════════════════════════════════════════════
 // Usuarios / equipo

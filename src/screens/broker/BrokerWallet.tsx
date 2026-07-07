@@ -1,6 +1,6 @@
 // Wallet del broker — datos REALES: GET /wallets/me, transacciones y cashout.
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Linking, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { alpha, colors, fonts, gradients, radius, shadows } from '../../theme/tokens';
@@ -8,7 +8,7 @@ import { Icon } from '../../components/Icon';
 import { AppText, Button, Card, IconButton, Screen, Segmented, Sheet, Tap, haptic } from '../../components/ui';
 import { useApp } from '../../store/AppContext';
 import { money, useBroker, brokerApi } from '../../store/BrokerStore';
-import type { WalletTx } from '../../lib/api/broker';
+import type { CashoutDetail, WalletTx } from '../../lib/api/broker';
 import { FadeUp, Hero, useCountUp, useHeaderFill } from './ui';
 
 const MOVE_META: Record<string, { icon: string; label: string }> = {
@@ -94,8 +94,11 @@ export function BrokerWallet() {
   const [filter, setFilter] = useState('all');
   const [run, setRun] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   useEffect(() => { const r = setTimeout(() => setRun(true), 60); return () => clearTimeout(r); }, []);
-  const bal = useCountUp(wallet?.balance ?? 0, run && !!wallet, 1100);
+  const available = wallet?.availableBalance ?? wallet?.balance ?? 0;
+  const reserved = wallet?.reservedAmount ?? 0;
+  const bal = useCountUp(available, run && !!wallet, 1100);
 
   const income = walletTx.filter((m) => m.amount > 0).reduce((a, m) => a + m.amount, 0);
   const outcome = walletTx.filter((m) => m.amount < 0).reduce((a, m) => a + Math.abs(m.amount), 0);
@@ -124,6 +127,9 @@ export function BrokerWallet() {
           <View style={{ marginTop: 18, alignItems: 'center' }}>
             <AppText weight="600" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11.5, letterSpacing: 0.8 }}>SALDO DISPONIBLE</AppText>
             <AppText serif weight="600" style={{ fontSize: 44, color: '#fff', marginTop: 4 }}>{money(bal, true)}</AppText>
+            {reserved > 0 && (
+              <AppText weight="600" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 4 }}>{money(reserved)} en solicitudes pendientes</AppText>
+            )}
           </View>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
@@ -153,43 +159,125 @@ export function BrokerWallet() {
         </View>
         <View style={{ paddingHorizontal: 16, gap: 10 }}>
           {moves.length === 0 && <View style={{ alignItems: 'center', paddingVertical: 36 }}><Icon name="wallet" size={36} color={colors.ink40} /><AppText style={{ fontSize: 14, color: colors.ink40, marginTop: 10 }}>Sin movimientos todavía</AppText></View>}
-          {moves.map((m, i) => <MoveRow key={m.id} m={m} i={i} />)}
+          {moves.map((m, i) => (
+            <MoveRow key={m.id} m={m} i={i}
+              onPress={m.cashoutId && (m.kind === 'cashout' || m.kind === 'cashout_reverted') ? () => setDetailId(m.cashoutId) : undefined} />
+          ))}
         </View>
       </Animated.ScrollView>
       {hf.fill}
 
-      <CashoutSheet open={sheet} onClose={() => setSheet(false)} max={wallet?.balance ?? 0}
-        onSubmit={async (amount, bank) => {
+      <CashoutSheet open={sheet} onClose={() => setSheet(false)} max={available}
+        onSubmit={async (amount, notes) => {
           if (!wallet) return;
-          try { await brokerApi.requestCashout(wallet.id, { amount, ...bank }); await refreshWallet(); showToast('Cashout solicitado · pendiente', 'info'); }
+          try { await brokerApi.requestCashout(wallet.id, { amount, notes }); await refreshWallet(); showToast('Solicitud enviada · pendiente de aprobación', 'info'); }
           catch (e: any) { showToast(e?.message || 'No se pudo solicitar', 'error'); }
         }} />
+
+      <CashoutDetailSheet cashoutId={detailId} onClose={() => setDetailId(null)} />
     </Screen>
   );
 }
 
-function MoveRow({ m, i }: { m: WalletTx; i: number }) {
+function MoveRow({ m, i, onPress }: { m: WalletTx; i: number; onPress?: () => void }) {
   const inc = m.amount > 0;
   const meta = MOVE_META[m.kind] || MOVE_META.commission;
   const date = (() => { try { return new Date(m.createdAt).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } })();
+  const body = (
+    <Card pad={13}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
+        <View style={{ width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: inc ? alpha(colors.success, 0.13) : alpha(colors.ink, 0.06) }}>
+          <Icon name={meta.icon as any} size={20} color={inc ? colors.success : colors.ink60} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <AppText weight="600" numberOfLines={1} style={{ fontSize: 14, color: colors.ink }}>{m.description || meta.label}</AppText>
+          <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>{date}{onPress ? ' · Ver detalle' : ''}</AppText>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <AppText serif weight="700" style={{ fontSize: 15.5, color: inc ? colors.success : colors.ink }}>{inc ? '+' : '−'}{money(Math.abs(m.amount))}</AppText>
+          <AppText style={{ fontSize: 11, color: colors.ink40, marginTop: 1 }}>{money(m.balanceAfter)}</AppText>
+        </View>
+      </View>
+    </Card>
+  );
   return (
     <FadeUp delay={i * 40}>
-      <Card pad={13}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: inc ? alpha(colors.success, 0.13) : alpha(colors.ink, 0.06) }}>
-            <Icon name={meta.icon as any} size={20} color={inc ? colors.success : colors.ink60} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText weight="600" numberOfLines={1} style={{ fontSize: 14, color: colors.ink }}>{m.description || meta.label}</AppText>
-            <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>{date}</AppText>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <AppText serif weight="700" style={{ fontSize: 15.5, color: inc ? colors.success : colors.ink }}>{inc ? '+' : '−'}{money(Math.abs(m.amount))}</AppText>
-            <AppText style={{ fontSize: 11, color: colors.ink40, marginTop: 1 }}>{money(m.balanceAfter)}</AppText>
-          </View>
-        </View>
-      </Card>
+      {onPress ? <Tap onPress={onPress} hapticKind="light">{body}</Tap> : body}
     </FadeUp>
+  );
+}
+
+function CashoutDetailSheet({ cashoutId, onClose }: { cashoutId: string | null; onClose: () => void }) {
+  const [detail, setDetail] = useState<CashoutDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!cashoutId) { setDetail(null); return; }
+    setLoading(true);
+    brokerApi.getCashoutDetail(cashoutId)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false));
+  }, [cashoutId]);
+
+  const STATUS: Record<string, { label: string; color: string }> = {
+    requested: { label: 'Solicitado', color: colors.accent },
+    processing: { label: 'En trámite', color: colors.navy500 },
+    completed: { label: 'Completado', color: colors.success },
+    rejected: { label: 'Rechazado', color: colors.error },
+  };
+  const METHOD: Record<string, string> = { wired: 'Wire transfer', ach: 'ACH', cash: 'Efectivo' };
+
+  return (
+    <Sheet open={!!cashoutId} onClose={onClose} title="Detalle del cashout">
+      <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, gap: 14 }}>
+        {loading && <ActivityIndicator color={colors.navy700} style={{ paddingVertical: 24 }} />}
+        {detail && (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <AppText serif weight="700" style={{ fontSize: 26, color: colors.ink }}>{money(detail.amount, true)}</AppText>
+              <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: alpha(STATUS[detail.status]?.color || colors.ink, 0.13) }}>
+                <AppText weight="700" style={{ fontSize: 12, color: STATUS[detail.status]?.color || colors.ink }}>{STATUS[detail.status]?.label || detail.status}</AppText>
+              </View>
+            </View>
+            <AppText style={{ fontSize: 12.5, color: colors.ink50 }}>
+              Solicitado el {new Date(detail.requestedAt).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {detail.completedAt ? ` · pagado el ${new Date(detail.completedAt).toLocaleDateString('es', { day: 'numeric', month: 'long' })}` : ''}
+            </AppText>
+            {detail.status === 'rejected' && detail.rejectionReason && (
+              <View style={{ padding: 12, borderRadius: radius.md, backgroundColor: alpha(colors.error, 0.09) }}>
+                <AppText style={{ fontSize: 13, color: colors.error }}>Motivo: {detail.rejectionReason}</AppText>
+              </View>
+            )}
+            {detail.disbursements.length > 0 && (
+              <View style={{ gap: 10 }}>
+                <AppText weight="700" style={{ fontSize: 13, color: colors.ink60 }}>Destinatarios</AppText>
+                {detail.disbursements.map((d) => (
+                  <Card key={d.id} pad={13}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                        <AppText weight="600" style={{ fontSize: 14, color: colors.ink }}>{d.payeeLabel || d.accountHolder || 'Destinatario'}</AppText>
+                        <AppText style={{ fontSize: 12, color: colors.ink50 }}>{METHOD[d.method] || d.method}{d.bankName ? ` · ${d.bankName}` : ''}</AppText>
+                        {d.accountNumber ? <AppText style={{ fontSize: 12, color: colors.ink50 }}>Cuenta #{d.accountNumber}</AppText> : null}
+                        {d.reference ? <AppText style={{ fontSize: 12, color: colors.ink40 }}>Ref: {d.reference}</AppText> : null}
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <AppText serif weight="700" style={{ fontSize: 15, color: colors.ink }}>{money(d.amount)}</AppText>
+                        {d.proofUrl ? (
+                          <Tap onPress={() => Linking.openURL(d.proofUrl!)} hapticKind="light" style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Icon name="receipt" size={13} color={colors.navy700} />
+                            <AppText weight="600" style={{ fontSize: 12, color: colors.navy700 }}>Recibo</AppText>
+                          </Tap>
+                        ) : null}
+                      </View>
+                    </View>
+                  </Card>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    </Sheet>
   );
 }
 
@@ -207,19 +295,17 @@ function FlowChip({ icon, label, value, tone, dim }: { icon: string; label: stri
   );
 }
 
-function CashoutSheet({ open, onClose, max, onSubmit }: { open: boolean; onClose: () => void; max: number; onSubmit: (amount: number, bank: { bankName?: string; bankAccountHolder?: string; bankAccountNumber?: string }) => Promise<void> }) {
+function CashoutSheet({ open, onClose, max, onSubmit }: { open: boolean; onClose: () => void; max: number; onSubmit: (amount: number, notes?: string) => Promise<void> }) {
   const [amount, setAmount] = useState('');
-  const [holder, setHolder] = useState('');
-  const [bank, setBank] = useState('');
-  const [account, setAccount] = useState('');
+  const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setAmount(''); setHolder(''); setBank(''); setAccount(''); } }, [open]);
+  useEffect(() => { if (open) { setAmount(''); setNotes(''); } }, [open]);
   const n = Number(amount || 0);
   const valid = n > 0 && n <= max && !busy;
   const pct = [25, 50, 100];
   const submit = async () => {
     setBusy(true); haptic('success');
-    await onSubmit(n, { bankName: bank.trim() || undefined, bankAccountHolder: holder.trim() || undefined, bankAccountNumber: account.trim() || undefined });
+    await onSubmit(n, notes.trim() || undefined);
     setBusy(false); onClose();
   };
   return (
@@ -240,12 +326,10 @@ function CashoutSheet({ open, onClose, max, onSubmit }: { open: boolean; onClose
             ))}
           </View>
         </View>
-        <TextInput value={holder} onChangeText={setHolder} placeholder="Titular de la cuenta" placeholderTextColor={colors.ink40} style={inputStyle} />
-        <TextInput value={bank} onChangeText={setBank} placeholder="Banco" placeholderTextColor={colors.ink40} style={inputStyle} />
-        <TextInput value={account} onChangeText={setAccount} placeholder="Nº de cuenta" placeholderTextColor={colors.ink40} keyboardType="number-pad" style={inputStyle} />
+        <TextInput value={notes} onChangeText={setNotes} placeholder="Nota (opcional)" placeholderTextColor={colors.ink40} multiline style={[inputStyle, { height: 72, paddingTop: 14, textAlignVertical: 'top' }]} />
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingHorizontal: 2 }}>
           <Icon name="info" size={16} color={colors.accent} />
-          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>Queda pendiente hasta la aprobación del equipo de Azahares.</AppText>
+          <AppText style={{ flex: 1, fontSize: 12.5, lineHeight: 19, color: colors.ink50 }}>Los datos bancarios los coordina el equipo de Azahares al procesar tu solicitud. Queda pendiente hasta su aprobación.</AppText>
         </View>
         <Button variant="primary" icon="arrowUpR" disabled={!valid} loading={busy} onPress={submit}>Solicitar {n > 0 ? money(n) : ''}</Button>
       </View>
