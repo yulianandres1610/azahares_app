@@ -306,6 +306,7 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
   const [busy, setBusy] = useState(false);
   const [payees, setPayees] = useState<Payee[]>([]);
   const [payeeId, setPayeeId] = useState('');
+  const [accountType, setAccountType] = useState<'personal' | 'business'>('business');
   const [method, setMethod] = useState<CashoutMethod>('wired');
   const [country, setCountry] = useState('United States');
   const [label, setLabel] = useState('');
@@ -315,7 +316,7 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
   const [address, setAddress] = useState('');
   useEffect(() => {
     if (open) {
-      setAmount(''); setNotes(''); setPayeeId(''); setMethod('wired'); setCountry('United States');
+      setAmount(''); setNotes(''); setPayeeId(''); setAccountType('business'); setMethod('wired'); setCountry('United States');
       setLabel(''); setBankName(''); setAccount(''); setRouting(''); setAddress('');
       if (brokerId) brokerApi.listPayees(brokerId).then(setPayees).catch(() => setPayees([]));
     }
@@ -324,6 +325,7 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
   const isNew = payeeId === '';
   const isUsa = /usa|united states|estados unidos|^us$/i.test(country);
   const isCash = method === 'cash';
+  const visiblePayees = payees.filter((p) => !p.accountType || p.accountType === accountType);
   const newOk = label.trim() && country && (isCash || (bankName.trim() && account.trim() && (!isUsa || (routing.trim() && address.trim()))));
   const valid = n > 0 && n <= max && !busy && (!isNew || newOk);
   const pct = [25, 50, 100];
@@ -331,8 +333,8 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
     setBusy(true); haptic('success');
     const chosen = payees.find((p) => p.id === payeeId);
     const payee: CashoutPayeeInput = isNew
-      ? { method, country, label: label.trim(), bankName: isCash ? undefined : bankName.trim(), accountNumber: isCash ? undefined : account.trim(), routing: isCash ? undefined : (routing.trim() || undefined), bankAddress: isCash ? undefined : (address.trim() || undefined) }
-      : { payeeId, method, country: chosen?.country || 'United States', label: chosen?.label || '' };
+      ? { accountType, method, country, label: label.trim(), bankName: isCash ? undefined : bankName.trim(), accountNumber: isCash ? undefined : account.trim(), routing: isCash ? undefined : (routing.trim() || undefined), bankAddress: isCash ? undefined : (address.trim() || undefined) }
+      : { payeeId, accountType, method, country: chosen?.country || 'United States', label: chosen?.label || '' };
     await onSubmit(n, notes.trim() || undefined, payee);
     setBusy(false); onClose();
   };
@@ -355,13 +357,14 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
           </View>
         </View>
 
+        <AppText weight="700" style={{ fontSize: 12, color: colors.ink60, marginLeft: 2 }}>TIPO DE CUENTA</AppText>
+        <Segmented value={accountType} onChange={(v) => { setAccountType(v as 'personal' | 'business'); setPayeeId(''); }} options={[{ value: 'business', label: 'Negocio' }, { value: 'personal', label: 'Personal' }]} />
+
         <AppText weight="700" style={{ fontSize: 12, color: colors.ink60, marginLeft: 2 }}>DESTINATARIO (a dónde depositar)</AppText>
-        {payees.length > 0 && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Chip active={isNew} label="＋ Nuevo" onPress={() => setPayeeId('')} />
-            {payees.map((p) => <Chip key={p.id} active={payeeId === p.id} label={p.label} onPress={() => setPayeeId(p.id)} />)}
-          </View>
-        )}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Chip active={isNew} label="＋ Nuevo" onPress={() => setPayeeId('')} />
+          {visiblePayees.map((p) => <Chip key={p.id} active={payeeId === p.id} label={p.label} onPress={() => setPayeeId(p.id)} />)}
+        </View>
 
         {isNew && (
           <>
@@ -370,7 +373,7 @@ function CashoutSheet({ open, onClose, max, brokerId, onSubmit }: { open: boolea
               {COUNTRIES.map((c) => <Chip key={c} active={country === c} label={c} onPress={() => setCountry(c)} />)}
             </View>
             {country === 'Otro' && <TextInput value={country === 'Otro' ? '' : country} onChangeText={setCountry} placeholder="País" placeholderTextColor={colors.ink40} style={inputStyle} />}
-            <TextInput value={label} onChangeText={setLabel} placeholder={isCash ? 'Nombre / beneficiario' : isUsa ? 'Nombre de la empresa' : 'Beneficiario'} placeholderTextColor={colors.ink40} style={inputStyle} />
+            <TextInput value={label} onChangeText={setLabel} placeholder={accountType === 'business' ? 'Nombre de la empresa' : 'Nombre de la persona'} placeholderTextColor={colors.ink40} style={inputStyle} />
             {!isCash && (
               <>
                 <TextInput value={bankName} onChangeText={setBankName} placeholder="Nombre del banco" placeholderTextColor={colors.ink40} style={inputStyle} />

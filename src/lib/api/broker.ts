@@ -206,7 +206,7 @@ export interface Wallet {
 }
 export type CashoutMethod = 'wired' | 'ach' | 'cash';
 export interface Payee {
-  id: string; brokerId: string; label: string; defaultMethod: CashoutMethod | null;
+  id: string; brokerId: string; label: string; accountType: 'personal' | 'business' | null; defaultMethod: CashoutMethod | null;
   bankName: string | null; accountHolder: string | null; accountNumber: string | null;
   routing: string | null; swift: string | null; bankAddress: string | null;
   country: string | null; notes: string | null; isActive: boolean; createdAt: string;
@@ -360,7 +360,7 @@ export const getMyWallet = () => apiFetch<Wallet | null>('/wallets/me');
 export const listWalletTransactions = (walletId: string, limit = 50) =>
   apiFetch<WalletTx[]>(`/wallets/${walletId}/transactions?limit=${limit}`);
 export interface CashoutPayeeInput {
-  payeeId?: string; method: CashoutMethod; country: string; label: string;
+  payeeId?: string; accountType?: 'personal' | 'business'; method: CashoutMethod; country: string; label: string;
   bankName?: string; accountNumber?: string; routing?: string; swift?: string; bankAddress?: string;
 }
 export const requestCashout = (walletId: string, payload: { amount: number; notes?: string; payee: CashoutPayeeInput }) =>
