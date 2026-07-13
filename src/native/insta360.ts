@@ -17,14 +17,13 @@ export type Insta360State =
   | 'disconnected'
   | 'connecting'
   | 'connected'
-  | 'capturing';
+  | 'recording'
+  | 'downloading';
 
-export interface Insta360Photo {
-  /** file:// local de la toma 360 equirectangular ya descargada del dispositivo. */
+export interface Insta360Video {
+  /** file:// local del video 360 ya descargado del dispositivo (.insv/.mp4). */
   uri: string;
-  /** Ancho/alto de la equirectangular (para el visor 360), si el SDK los provee. */
-  width?: number;
-  height?: number;
+  ext?: string;
 }
 
 export interface Insta360NativeModule {
@@ -34,11 +33,13 @@ export interface Insta360NativeModule {
   connect(): Promise<void>;
   /** Cierra la conexión. */
   disconnect(): Promise<void>;
-  /** Toma una foto 360 en modo single y la descarga a un archivo local. */
-  capture360(): Promise<Insta360Photo>;
+  /** Inicia la grabación de video 360 (en la SD de la cámara). */
+  startRecording(): Promise<void>;
+  /** Detiene la grabación, descarga el video y devuelve su file:// local. */
+  stopRecording(): Promise<Insta360Video>;
   /** Nombre/modelo de la cámara conectada (X5, X4, ONE X2, …), si hay. */
   getCameraName(): string | null;
-  addListener(event: 'stateChange', listener: (state: Insta360State) => void): { remove(): void };
+  addListener(event: 'stateChange' | 'downloadProgress', listener: (payload: any) => void): { remove(): void };
 }
 
 const native = requireOptionalNativeModule<Insta360NativeModule>('Insta360');
@@ -77,9 +78,14 @@ export async function disconnectCamera(): Promise<void> {
   return native.disconnect();
 }
 
-export async function capture360(): Promise<Insta360Photo> {
+export async function startRecording(): Promise<void> {
   if (!native) throw new Error('INSTA360_NOT_AVAILABLE');
-  return native.capture360();
+  return native.startRecording();
+}
+
+export async function stopRecording(): Promise<Insta360Video> {
+  if (!native) throw new Error('INSTA360_NOT_AVAILABLE');
+  return native.stopRecording();
 }
 
 export function onInsta360StateChange(
@@ -91,6 +97,16 @@ export function onInsta360StateChange(
     const state = (typeof payload === 'string' ? payload : payload?.state) as Insta360State;
     console.log('[Insta360] stateChange →', state);
     listener(state);
+  });
+  return () => sub.remove();
+}
+
+export function onInsta360DownloadProgress(
+  listener: (progress: number) => void,
+): () => void {
+  if (!native) return () => {};
+  const sub = native.addListener('downloadProgress', (payload: any) => {
+    listener(typeof payload === 'number' ? payload : (payload?.progress ?? 0));
   });
   return () => sub.remove();
 }

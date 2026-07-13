@@ -17,7 +17,7 @@ public class Insta360Module: Module {
   public func definition() -> ModuleDefinition {
     Name("Insta360")
 
-    Events("stateChange")
+    Events("stateChange", "downloadProgress")
 
     // Estado actual de la conexión con la cámara.
     Function("getState") { () -> String in
@@ -65,45 +65,56 @@ public class Insta360Module: Module {
       }
     }
 
-    // Toma UNA foto 360 y la descarga al disco local. Resuelve con file://.
-    AsyncFunction("capture360") { (promise: Promise) in
+    // Inicia la grabación de video 360 (se guarda en la SD de la cámara).
+    AsyncFunction("startRecording") { (promise: Promise) in
       DispatchQueue.main.async {
-        let mgr = INSCameraManager.socket()
-        guard mgr.cameraState == .connected else {
+        guard INSCameraManager.socket().cameraState == .connected else {
           promise.reject("NOT_CONNECTED", "La cámara no está conectada.")
           return
         }
-        self.sendEvent("stateChange", ["state": "capturing"])
-        // Los comandos se envían por shared().commandManager (el SDK lo resuelve
-        // al manager activo — socket en modo WiFi). Usar socket().commandManager
-        // directamente cuelga el comando.
-        let cmd = INSCameraManager.shared().commandManager
-        let options = INSTakePictureOptions()
-        NSLog("[Insta360] capture360: llamando takePicture…")
-        cmd.takePicture(with: options) { error, photoInfo in
+        NSLog("[Insta360] startCapture…")
+        INSCameraManager.shared().commandManager.startCapture(with: nil) { error in
           if let error = error {
-            NSLog("[Insta360] takePicture ERROR: \(error.localizedDescription)")
+            NSLog("[Insta360] startCapture ERROR: \(error.localizedDescription)")
+            promise.reject("RECORD_FAILED", error.localizedDescription)
+          } else {
+            NSLog("[Insta360] startCapture OK (grabando)")
+            self.sendEvent("stateChange", ["state": "recording"])
+            promise.resolve(nil)
+          }
+        }
+      }
+    }
+
+    // Detiene la grabación, descarga el video 360 al disco local y resuelve con
+    // el file:// del archivo (.insv / .mp4 según la cámara).
+    AsyncFunction("stopRecording") { (promise: Promise) in
+      DispatchQueue.main.async {
+        NSLog("[Insta360] stopCapture…")
+        INSCameraManager.shared().commandManager.stopCapture(with: nil) { error, info in
+          if let error = error {
+            NSLog("[Insta360] stopCapture ERROR: \(error.localizedDescription)")
             self.sendEvent("stateChange", ["state": "connected"])
-            promise.reject("CAPTURE_FAILED", error.localizedDescription)
+            promise.reject("STOP_FAILED", error.localizedDescription)
             return
           }
-          let uri = photoInfo?.uri ?? ""
-          NSLog("[Insta360] takePicture OK, uri='\(uri)'")
+          let uri = info?.uri ?? ""
+          NSLog("[Insta360] stopCapture OK, uri='\(uri)'")
           guard !uri.isEmpty else {
             self.sendEvent("stateChange", ["state": "connected"])
-            promise.reject("NO_URI", "La cámara no devolvió la foto.")
+            promise.reject("NO_URI", "La cámara no devolvió el video.")
             return
           }
-          // Descarga la foto 360 al disco local (transferencia rápida por WiFi).
           self.sendEvent("stateChange", ["state": "downloading"])
           let dir = FileManager.default.temporaryDirectory
-          let dest = dir.appendingPathComponent("insta360-\(Int(Date().timeIntervalSince1970)).jpg")
-          NSLog("[Insta360] fetchResource → \(dest.path)")
-          _ = cmd.fetchResource(
+          let ext = (uri as NSString).pathExtension.isEmpty ? "mp4" : (uri as NSString).pathExtension
+          let dest = dir.appendingPathComponent("insta360-\(Int(Date().timeIntervalSince1970)).\(ext)")
+          NSLog("[Insta360] fetchResource (video) → \(dest.path)")
+          _ = INSCameraManager.shared().commandManager.fetchResource(
             withURI: uri,
             toLocalFile: dest,
             progress: { p in
-              NSLog("[Insta360] download progress: \(p?.fractionCompleted ?? 0)")
+              self.sendEvent("downloadProgress", ["progress": p?.fractionCompleted ?? 0])
             },
             completion: { err in
               if let err = err {
@@ -113,7 +124,7 @@ public class Insta360Module: Module {
               } else {
                 NSLog("[Insta360] fetchResource OK")
                 self.sendEvent("stateChange", ["state": "connected"])
-                promise.resolve(["uri": dest.absoluteString])
+                promise.resolve(["uri": dest.absoluteString, "ext": ext])
               }
             }
           )
