@@ -517,14 +517,31 @@ function EditSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   useEffect(() => {
     if (open) {
       setName(me?.fullName || '');
-      setPhone(me?.phone || '');
+      // Muestra solo el número local (sin el +1) en el input.
+      const d = (me?.phone || '').replace(/\D/g, '');
+      const local = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
+      setPhone(local);
     }
   }, [open, me]);
 
   const save = async () => {
+    // El backend exige el teléfono como +1 + 10 dígitos (US/Canadá). Tomamos
+    // solo los dígitos del input, quitamos un 1 de país si viene, y prefijamos
+    // +1. Si el campo quedó vacío, no enviamos phone (no lo modifica).
+    const digits = phone.replace(/\D/g, '');
+    const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+    let fullPhone: string | undefined;
+    if (local.length === 0) {
+      fullPhone = undefined;
+    } else if (local.length === 10) {
+      fullPhone = `+1${local}`;
+    } else {
+      showToast(t('phoneInvalid'), 'warn');
+      return;
+    }
     setBusy(true);
     try {
-      const updated = await updateMe({ fullName: name.trim(), phone: phone.trim() });
+      const updated = await updateMe({ fullName: name.trim(), phone: fullPhone });
       setMe(updated);
       onClose();
       haptic('success');

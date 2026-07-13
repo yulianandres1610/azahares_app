@@ -1,4 +1,5 @@
 // Endpoints de perfil + OTP.
+import * as FileSystem from 'expo-file-system/legacy';
 import { apiFetch } from './client';
 import type { Me } from './types';
 
@@ -10,13 +11,18 @@ export function updateMe(patch: { fullName?: string; avatarUrl?: string; phone?:
   return apiFetch<Me>('/me', { method: 'PATCH', body: patch });
 }
 
-// Sube un avatar (multipart). `uri` es un file:// local.
-export function uploadAvatar(uri: string, mimeType = 'image/jpeg'): Promise<Me> {
-  const form = new FormData();
-  const name = uri.split('/').pop() || 'avatar.jpg';
-  // @ts-expect-error RN FormData acepta {uri,name,type}
-  form.append('file', { uri, name, type: mimeType });
-  return apiFetch<Me>('/me/avatar', { method: 'POST', body: form });
+// Sube un avatar. El backend espera JSON { dataBase64, contentType } (no
+// multipart): leemos el archivo local file:// como base64 con expo-file-system
+// (subida robusta bajo la nueva arquitectura de RN, donde fetch + FormData de
+// archivos falla con "Network request failed").
+export async function uploadAvatar(uri: string, mimeType = 'image/jpeg'): Promise<Me> {
+  const dataBase64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return apiFetch<Me>('/me/avatar', {
+    method: 'POST',
+    body: { dataBase64, contentType: mimeType },
+  });
 }
 
 export function deleteAvatar(): Promise<Me> {
