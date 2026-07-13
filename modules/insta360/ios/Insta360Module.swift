@@ -74,7 +74,10 @@ public class Insta360Module: Module {
           return
         }
         self.sendEvent("stateChange", ["state": "capturing"])
-        let cmd = mgr.commandManager
+        // Los comandos se envían por shared().commandManager (el SDK lo resuelve
+        // al manager activo — socket en modo WiFi). Usar socket().commandManager
+        // directamente cuelga el comando.
+        let cmd = INSCameraManager.shared().commandManager
         let options = INSTakePictureOptions()
         NSLog("[Insta360] capture360: llamando takePicture…")
         cmd.takePicture(with: options) { error, photoInfo in
@@ -180,7 +183,7 @@ public class Insta360Module: Module {
   private func startHeartbeat() {
     stopHeartbeat()
     heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-      INSCameraManager.socket().commandManager.sendHeartbeats(with: nil)
+      INSCameraManager.shared().commandManager.sendHeartbeats(with: nil)
     }
   }
 
