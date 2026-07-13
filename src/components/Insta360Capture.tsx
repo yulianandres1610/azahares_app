@@ -85,6 +85,10 @@ export function Insta360Capture({
     try {
       setPhase('connecting');
       await connectCamera();
+      // connect() resuelve cuando la cámara quedó Connected. Avanzamos la UI
+      // aquí (sin depender solo del evento stateChange).
+      setPhase('connected');
+      setCameraName(getCameraName());
       haptic('success');
     } catch (e: any) {
       setPhase('disconnected');

@@ -57,7 +57,14 @@ export function getCameraName(): string | null {
 
 export async function connectCamera(): Promise<void> {
   if (!native) throw new Error('INSTA360_NOT_AVAILABLE');
-  return native.connect();
+  console.log('[Insta360] connectCamera() → llamando native.connect()');
+  try {
+    await native.connect();
+    console.log('[Insta360] connectCamera() → OK (connected)');
+  } catch (e: any) {
+    console.log('[Insta360] connectCamera() → ERROR:', e?.message ?? e);
+    throw e;
+  }
 }
 
 export async function disconnectCamera(): Promise<void> {
@@ -74,6 +81,11 @@ export function onInsta360StateChange(
   listener: (state: Insta360State) => void,
 ): () => void {
   if (!native) return () => {};
-  const sub = native.addListener('stateChange', listener);
+  const sub = native.addListener('stateChange', (payload: any) => {
+    // El módulo nativo emite { state: "..." }. Aceptamos también un string suelto.
+    const state = (typeof payload === 'string' ? payload : payload?.state) as Insta360State;
+    console.log('[Insta360] stateChange →', state);
+    listener(state);
+  });
   return () => sub.remove();
 }
