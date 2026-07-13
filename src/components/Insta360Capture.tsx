@@ -13,7 +13,6 @@ import {
   connectCamera,
   disconnectCamera,
   getCameraName,
-  Insta360PreviewNative,
   isInsta360Available,
   onInsta360StateChange,
   type Insta360State,
@@ -198,10 +197,17 @@ export function Insta360Capture({
         </View>
       </View>
 
-      {/* Preview en vivo (la cámara apaga su pantalla; se encuadra desde el móvil) */}
-      {Insta360PreviewNative && phase !== 'done' && (
-        <View style={{ width: '100%', aspectRatio: 2, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
-          <Insta360PreviewNative style={{ flex: 1 }} />
+      {/* La toma 360 capta todo el entorno, así que no requiere encuadre. El
+          preview en vivo satura el canal WiFi de la cámara y bloquea la captura,
+          por eso mostramos una guía en vez del stream. */}
+      {phase !== 'done' && (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: alpha(colors.navy500, 0.08), borderRadius: radius.lg, padding: 16 }}>
+          <Icon name="info" size={18} color={colors.navy500} />
+          <AppText style={{ flex: 1, fontSize: 13, color: colors.ink70, lineHeight: 19 }}>
+            {es
+              ? 'Colocá la cámara en el centro del contenedor. La toma 360° capta todo el entorno de una sola vez.'
+              : 'Place the camera in the center of the container. The 360° shot captures the whole surroundings at once.'}
+          </AppText>
         </View>
       )}
 
