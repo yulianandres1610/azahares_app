@@ -42,5 +42,5 @@ Pod::Spec.new do |s|
     '_EXPERIMENTAL_SWIFT_EXPLICIT_MODULES' => 'NO',
   }
 
-  s.source_files = 'Insta360Module.swift'
+  s.source_files = '*.swift'
 end
