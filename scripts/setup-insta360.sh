@@ -39,4 +39,12 @@ for fw in INSCameraSDK INSCameraServiceSDK INSCoreMedia SSZipArchive; do
   echo "  ✓ $fw.xcframework"
 done
 
-echo "→ Listo. Ahora corré: npx expo prebuild -p ios && npx expo run:ios"
+# Los headers de INSCoreMedia importan NvEffectSdkCore bajo `#if !TO_B_SDK`.
+# Ese framework de efectos NO viene en el SDK "to B"; forzamos el modo TO_B
+# (bloque nunca compilado) para que el módulo Clang construya sin él.
+echo "→ Parcheando headers para el modo TO_B…"
+for f in $(grep -rlE "if !TO_B_SDK" --include="*.h" "$DEST" 2>/dev/null); do
+  sed -i '' 's/#if !TO_B_SDK/#if 0 \/\/ TO_B_SDK (azahares)/' "$f"
+done
+
+echo "→ Listo. Ahora corré: cd ios && pod install && cd .. && npx expo run:ios"

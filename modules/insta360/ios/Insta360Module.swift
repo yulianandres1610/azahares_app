@@ -1,5 +1,7 @@
 import ExpoModulesCore
 import INSCameraServiceSDK
+import INSCameraSDK
+import INSCoreMedia
 
 // Puente Expo ↔ INSCameraSDK de Insta360.
 //
@@ -18,20 +20,20 @@ public class Insta360Module: Module {
 
     // Estado actual de la conexión con la cámara.
     Function("getState") { () -> String in
-      return self.stateString(INSCameraManager.socketManager().cameraState)
+      return self.stateString(INSCameraManager.socket().cameraState)
     }
 
     Function("getCameraName") { () -> String? in
       // El SDK no expone un nombre estable por API pública; devolvemos el serial
       // si está disponible, o nil (la UI muestra "Cámara conectada").
-      let cam = INSCameraManager.socketManager().currentCamera
+      let cam = INSCameraManager.socket().currentCamera
       return (cam as AnyObject).value(forKey: "serial") as? String
     }
 
     // Conecta por WiFi (hotspot de la cámara) y espera a Connected (timeout 30s).
     AsyncFunction("connect") { (promise: Promise) in
       DispatchQueue.main.async {
-        let mgr = INSCameraManager.socketManager()
+        let mgr = INSCameraManager.socket()
         if mgr.cameraState == .connected {
           promise.resolve(nil)
           return
@@ -46,7 +48,7 @@ public class Insta360Module: Module {
     AsyncFunction("disconnect") { (promise: Promise) in
       DispatchQueue.main.async {
         self.stopPolling()
-        INSCameraManager.socketManager().shutdown()
+        INSCameraManager.socket().shutdown()
         self.sendEvent("stateChange", ["state": "disconnected"])
         promise.resolve(nil)
       }
@@ -55,15 +57,15 @@ public class Insta360Module: Module {
     // Toma UNA foto 360 y la descarga al disco local. Resuelve con file://.
     AsyncFunction("capture360") { (promise: Promise) in
       DispatchQueue.main.async {
-        let mgr = INSCameraManager.socketManager()
+        let mgr = INSCameraManager.socket()
         guard mgr.cameraState == .connected else {
           promise.reject("NOT_CONNECTED", "La cámara no está conectada.")
           return
         }
         self.sendEvent("stateChange", ["state": "capturing"])
-        let cmd = mgr.commandsImpl
+        let cmd = mgr.commandManager
         let options = INSTakePictureOptions()
-        cmd.takePicture(withOptions: options) { error, photoInfo in
+        cmd.takePicture(with: options) { error, photoInfo in
           if let error = error {
             promise.reject("CAPTURE_FAILED", error.localizedDescription)
             return
@@ -114,7 +116,7 @@ public class Insta360Module: Module {
     sendEvent("stateChange", ["state": "connecting"])
     pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
       guard let self = self else { return }
-      let state = INSCameraManager.socketManager().cameraState
+      let state = INSCameraManager.socket().cameraState
       self.sendEvent("stateChange", ["state": self.stateString(state)])
       if state == .connected {
         self.stopPolling()

@@ -27,9 +27,19 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_COMPILATION_MODE' => 'wholemodule',
-    # Build setting exigido por el SDK "to B".
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'TO_B_SDK=1',
-    'OTHER_SWIFT_FLAGS' => '-DTO_B_SDK',
+    # El SDK "to B" apaga las dependencias de efectos (NvEffectSdkCore) con
+    # `#if !TO_B_SDK` en sus headers. El define debe llegar tanto al compilador
+    # de este pod como al Clang module importer que construye los módulos de los
+    # xcframeworks importados (de ahí el `-Xcc -DTO_B_SDK=1`).
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) TO_B_SDK=1',
+    'OTHER_CFLAGS' => '$(inherited) -DTO_B_SDK=1',
+    'OTHER_SWIFT_FLAGS' => '$(inherited) -DTO_B_SDK -Xcc -DTO_B_SDK=1',
+    # Xcode 16 usa explicit modules, que no propagan los -Xcc defines al build
+    # del módulo Clang dependiente (INSCoreMedia con `#if !TO_B_SDK`). Volvemos a
+    # implicit modules para que TO_B_SDK=1 llegue a los headers del SDK (igual
+    # que el proyecto de ejemplo oficial de Insta360).
+    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO',
+    '_EXPERIMENTAL_SWIFT_EXPLICIT_MODULES' => 'NO',
   }
 
   s.source_files = 'Insta360Module.swift'
