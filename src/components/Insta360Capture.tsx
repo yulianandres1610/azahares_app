@@ -13,6 +13,7 @@ import {
   connectCamera,
   disconnectCamera,
   getCameraName,
+  Insta360PreviewNative,
   isInsta360Available,
   onInsta360StateChange,
   type Insta360State,
@@ -54,7 +55,11 @@ export function Insta360Capture({
   useEffect(() => {
     if (!available) return;
     const off = onInsta360StateChange((s) => {
-      setPhase((prev) => (prev === 'uploading' || prev === 'done' ? prev : s));
+      // Durante el flujo de captura (capturing/uploading/done) mandamos nosotros
+      // desde shoot(); el listener solo refleja cambios de CONEXIÓN.
+      setPhase((prev) =>
+        prev === 'capturing' || prev === 'uploading' || prev === 'done' ? prev : (s as Phase),
+      );
       setCameraName(getCameraName());
     });
     return () => {
@@ -192,6 +197,13 @@ export function Insta360Capture({
           </AppText>
         </View>
       </View>
+
+      {/* Preview en vivo (la cámara apaga su pantalla; se encuadra desde el móvil) */}
+      {Insta360PreviewNative && phase !== 'done' && (
+        <View style={{ width: '100%', aspectRatio: 2, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
+          <Insta360PreviewNative style={{ flex: 1 }} />
+        </View>
+      )}
 
       {phase === 'done' ? (
         <View style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }}>

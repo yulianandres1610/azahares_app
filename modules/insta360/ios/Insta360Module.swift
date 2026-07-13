@@ -76,26 +76,39 @@ public class Insta360Module: Module {
         self.sendEvent("stateChange", ["state": "capturing"])
         let cmd = mgr.commandManager
         let options = INSTakePictureOptions()
+        NSLog("[Insta360] capture360: llamando takePicture…")
         cmd.takePicture(with: options) { error, photoInfo in
           if let error = error {
+            NSLog("[Insta360] takePicture ERROR: \(error.localizedDescription)")
+            self.sendEvent("stateChange", ["state": "connected"])
             promise.reject("CAPTURE_FAILED", error.localizedDescription)
             return
           }
-          guard let uri = photoInfo?.uri, !uri.isEmpty else {
+          let uri = photoInfo?.uri ?? ""
+          NSLog("[Insta360] takePicture OK, uri='\(uri)'")
+          guard !uri.isEmpty else {
+            self.sendEvent("stateChange", ["state": "connected"])
             promise.reject("NO_URI", "La cámara no devolvió la foto.")
             return
           }
           // Descarga la foto 360 al disco local (transferencia rápida por WiFi).
+          self.sendEvent("stateChange", ["state": "downloading"])
           let dir = FileManager.default.temporaryDirectory
           let dest = dir.appendingPathComponent("insta360-\(Int(Date().timeIntervalSince1970)).jpg")
+          NSLog("[Insta360] fetchResource → \(dest.path)")
           _ = cmd.fetchResource(
             withURI: uri,
             toLocalFile: dest,
-            progress: { _ in },
+            progress: { p in
+              NSLog("[Insta360] download progress: \(p?.fractionCompleted ?? 0)")
+            },
             completion: { err in
               if let err = err {
+                NSLog("[Insta360] fetchResource ERROR: \(err.localizedDescription)")
+                self.sendEvent("stateChange", ["state": "connected"])
                 promise.reject("DOWNLOAD_FAILED", err.localizedDescription)
               } else {
+                NSLog("[Insta360] fetchResource OK")
                 self.sendEvent("stateChange", ["state": "connected"])
                 promise.resolve(["uri": dest.absoluteString])
               }
@@ -104,6 +117,9 @@ public class Insta360Module: Module {
         }
       }
     }
+
+    // Vista de preview en vivo (para encuadrar la toma desde el teléfono).
+    View(Insta360PreviewView.self) {}
 
     OnDestroy {
       self.stopPolling()

@@ -10,7 +10,8 @@
 //   connect()      → INSCameraManager.socket().setup() + heartbeat
 //   capture360()   → setOptions(photoSubMode=.single) → takePicture → fetchResource
 //   disconnect()   → INSCameraManager.socket().shutdown()
-import { requireOptionalNativeModule } from 'expo';
+import { requireOptionalNativeModule, requireNativeView } from 'expo';
+import type { ComponentType } from 'react';
 
 export type Insta360State =
   | 'disconnected'
@@ -46,6 +47,10 @@ const native = requireOptionalNativeModule<Insta360NativeModule>('Insta360');
 export function isInsta360Available(): boolean {
   return native != null;
 }
+
+/** Vista nativa de preview en vivo de la cámara (null si el SDK no está). */
+export const Insta360PreviewNative: ComponentType<{ style?: any }> | null =
+  native != null ? (requireNativeView('Insta360') as ComponentType<{ style?: any }>) : null;
 
 export function getInsta360State(): Insta360State {
   return native ? native.getState() : 'disconnected';
