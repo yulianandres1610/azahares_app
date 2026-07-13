@@ -20,6 +20,9 @@
         "NSPhotoLibraryUsageDescription": "Azahares accede a tus fotos para adjuntar imágenes de contenedores y tu avatar.",
         "NSFaceIDUsageDescription": "Azahares usa Face ID para desbloquear tu sesión de forma segura.",
         "NSLocationWhenInUseUsageDescription": "Azahares usa tu ubicación para mostrar el clima de la yarda.",
+        "NSLocalNetworkUsageDescription": "Azahares se conecta a la red WiFi de la cámara Insta360 para tomar y descargar la foto 360 de inspección.",
+        "NSBluetoothAlwaysUsageDescription": "Azahares usa Bluetooth para detectar y conectar la cámara Insta360.",
+        "NSBonjourServices": ["_instacamera._tcp", "_insta360._tcp"],
         "ITSAppUsesNonExemptEncryption": false
       }
     },

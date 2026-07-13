@@ -42,3 +42,6 @@ yarn-error.*
 
 # local env
 .env
+
+# Insta360 SDK xcframeworks (binarios ~600MB, se colocan con scripts/setup-insta360.sh)
+modules/insta360/ios/Frameworks/
