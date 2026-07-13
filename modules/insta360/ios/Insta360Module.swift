@@ -47,6 +47,7 @@ public class Insta360Module: Module {
           promise.resolve(nil)
           return
         }
+        NSLog("[Insta360] connect(): socket setup, estado inicial=\(mgr.cameraState.rawValue)")
         mgr.setup()
         self.connectResolve = { _ in promise.resolve(nil) }
         self.connectReject = { code, msg in promise.reject(code, msg) }
@@ -128,6 +129,7 @@ public class Insta360Module: Module {
     pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
       guard let self = self else { return }
       let state = INSCameraManager.socket().cameraState
+      NSLog("[Insta360] poll: cameraState=\(state.rawValue) (\(self.stateString(state)))")
       self.sendEvent("stateChange", ["state": self.stateString(state)])
       if state == .connected {
         self.stopPolling()

@@ -1,11 +1,11 @@
-// Flujo de inspección visual con cámara Insta360: conectar → tomar UNA foto
-// 360 del contenedor → subirla como media de la inspección. Se apoya en el
+// Flujo de inspección visual con cámara Insta360: emparejar (WiFi) → conectar →
+// tomar UNA foto 360 → subirla como media de la inspección. Se apoya en el
 // módulo nativo `src/native/insta360.ts` (SDK de Insta360). Si el módulo nativo
 // no está compilado en el build, muestra un aviso en vez de romper.
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Linking, View } from 'react-native';
 import { alpha, colors, radius } from '../theme/tokens';
-import { AppText, Button, haptic } from './ui';
+import { AppText, Button, Tap, haptic } from './ui';
 import { Icon } from './Icon';
 import { uploadInspectionMedia } from '../lib/api/inspections';
 import {
@@ -20,6 +20,19 @@ import {
 import { useApp } from '../store/AppContext';
 
 type Phase = Insta360State | 'uploading' | 'done';
+
+// Abre los ajustes de WiFi de iOS (con fallback a los ajustes de la app).
+async function openWifiSettings() {
+  try {
+    await Linking.openURL('App-Prefs:root=WIFI');
+  } catch {
+    try {
+      await Linking.openSettings();
+    } catch {
+      /* noop */
+    }
+  }
+}
 
 export function Insta360Capture({
   inspectionId,
@@ -36,6 +49,7 @@ export function Insta360Capture({
   const [phase, setPhase] = useState<Phase>('disconnected');
   const [progress, setProgress] = useState(0);
   const [cameraName, setCameraName] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!available) return;
@@ -67,13 +81,25 @@ export function Insta360Capture({
   }
 
   const connect = async () => {
+    setConnectError(null);
     try {
       setPhase('connecting');
       await connectCamera();
       haptic('success');
     } catch (e: any) {
       setPhase('disconnected');
-      showToast(e?.message || t('errorGeneric'), 'error');
+      // Timeout / no encontrada → casi siempre es que el iPhone no está en el
+      // WiFi de la cámara. Mostramos la guía de emparejamiento, no un toast seco.
+      const code = e?.message || '';
+      if (code === 'TIMEOUT' || code === 'CONNECT_FAILED' || code === 'NOT_CONNECTED') {
+        setConnectError(
+          es
+            ? 'No encontramos la cámara. Verificá que esté encendida y que tu iPhone esté unido a su red WiFi.'
+            : "Camera not found. Make sure it's on and your iPhone is joined to its WiFi network.",
+        );
+      } else if (code !== 'BIO_CANCELLED') {
+        showToast(code || t('errorGeneric'), 'error');
+      }
     }
   };
 
@@ -85,12 +111,8 @@ export function Insta360Capture({
       const photo = await capture360();
       setPhase('uploading');
       setProgress(0);
-      await uploadInspectionMedia(
-        inspectionId,
-        'panorama_360',
-        photo.uri,
-        'image/jpeg',
-        (pct) => setProgress(pct),
+      await uploadInspectionMedia(inspectionId, 'panorama_360', photo.uri, 'image/jpeg', (pct) =>
+        setProgress(pct),
       );
       setPhase('done');
       haptic('success');
@@ -102,39 +124,78 @@ export function Insta360Capture({
   };
 
   const connected = phase === 'connected' || phase === 'capturing' || phase === 'uploading' || phase === 'done';
+  const connecting = phase === 'connecting';
 
+  // ── No conectada: flujo de emparejamiento guiado ────────────
+  if (!connected) {
+    return (
+      <View style={{ gap: 14 }}>
+        <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 18, gap: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Icon name="scan" size={20} color={colors.navy500} />
+            <AppText weight="700" style={{ fontSize: 15, color: colors.ink }}>
+              {es ? 'Emparejar cámara Insta360' : 'Pair Insta360 camera'}
+            </AppText>
+          </View>
+
+          {/* Pasos */}
+          {[
+            es ? 'Encendé la cámara y activá su WiFi.' : 'Turn on the camera and enable its WiFi.',
+            es ? 'Unite a la red WiFi de la cámara (empieza por “Insta360…”).' : 'Join the camera’s WiFi network (starts with “Insta360…”).',
+            es ? 'Volvé y tocá “Conectar cámara”.' : 'Come back and tap “Connect camera”.',
+          ].map((step, i) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: alpha(colors.navy500, 0.12), alignItems: 'center', justifyContent: 'center' }}>
+                <AppText weight="700" style={{ fontSize: 12, color: colors.navy500 }}>{i + 1}</AppText>
+              </View>
+              <AppText style={{ flex: 1, fontSize: 13.5, color: colors.ink70, lineHeight: 19 }}>{step}</AppText>
+            </View>
+          ))}
+
+          {connectError && (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9, backgroundColor: alpha(colors.amber, 0.12), borderRadius: 12, padding: 12 }}>
+              <Icon name="alert" size={17} color={colors.amber} />
+              <AppText style={{ flex: 1, fontSize: 12.5, color: colors.ink70, lineHeight: 18 }}>{connectError}</AppText>
+            </View>
+          )}
+        </View>
+
+        <Button variant="outline" icon="settings" onPress={openWifiSettings} disabled={connecting}>
+          {es ? 'Abrir ajustes de WiFi' : 'Open WiFi settings'}
+        </Button>
+        <Button icon="scan" onPress={connect} loading={connecting} disabled={!editable}>
+          {connecting
+            ? es ? 'Conectando…' : 'Connecting…'
+            : es ? 'Conectar cámara' : 'Connect camera'}
+        </Button>
+      </View>
+    );
+  }
+
+  // ── Conectada: capturar / subir ─────────────────────────────
   return (
     <View style={{ gap: 16 }}>
-      {/* Estado de conexión */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 16 }}>
-        <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: connected ? alpha(colors.success, 0.12) : colors.line }}>
-          <Icon name={connected ? 'check' : 'camera'} size={20} color={connected ? colors.success : colors.ink40} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: alpha(colors.success, 0.10), borderRadius: radius.lg, borderWidth: 1, borderColor: alpha(colors.success, 0.3), padding: 16 }}>
+        <View style={{ width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: alpha(colors.success, 0.16) }}>
+          <Icon name="check" size={20} color={colors.success} />
         </View>
         <View style={{ flex: 1 }}>
           <AppText weight="600" style={{ fontSize: 14.5, color: colors.ink }}>
-            {connected
-              ? cameraName || (es ? 'Cámara conectada' : 'Camera connected')
-              : phase === 'connecting'
-                ? es ? 'Conectando…' : 'Connecting…'
-                : es ? 'Cámara desconectada' : 'Camera disconnected'}
+            {cameraName || (es ? 'Cámara conectada' : 'Camera connected')}
           </AppText>
           <AppText style={{ fontSize: 12, color: colors.ink50, marginTop: 2 }}>
-            {es ? 'Conectá al WiFi de la cámara Insta360' : 'Connect to the Insta360 camera WiFi'}
+            {es ? 'Lista para tomar la foto 360' : 'Ready to take the 360 photo'}
           </AppText>
         </View>
       </View>
 
-      {!connected ? (
-        <Button icon="camera" onPress={connect} loading={phase === 'connecting'} disabled={!editable}>
-          {es ? 'Conectar cámara' : 'Connect camera'}
-        </Button>
-      ) : phase === 'done' ? (
+      {phase === 'done' ? (
         <View style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }}>
           <Icon name="check" size={30} color={colors.success} />
           <AppText weight="600" style={{ color: colors.success, fontSize: 15 }}>
             {es ? 'Toma 360 subida' : '360 shot uploaded'}
           </AppText>
-          <Button variant="outline" icon="camera" onPress={() => setPhase('connected')} style={{ marginTop: 4 }}>
+          <Button variant="outline" icon="scan" onPress={() => setPhase('connected')} style={{ marginTop: 4 }}>
             {es ? 'Tomar otra' : 'Take another'}
           </Button>
         </View>
@@ -146,7 +207,7 @@ export function Insta360Capture({
           </AppText>
         </View>
       ) : (
-        <Button icon="camera" onPress={shoot} loading={phase === 'capturing'} disabled={!editable}>
+        <Button icon="scan" onPress={shoot} loading={phase === 'capturing'} disabled={!editable}>
           {phase === 'capturing'
             ? es ? 'Capturando 360…' : 'Capturing 360…'
             : es ? 'Tomar foto 360' : 'Take 360 photo'}
