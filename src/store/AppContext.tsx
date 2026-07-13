@@ -2,6 +2,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState as RNAppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { supabase } from '../lib/supabase';
 import { getMe, otpLoginSuccess, otpSettings, savePushToken } from '../lib/api/me';
 import { listContainers } from '../lib/api/containers';
@@ -40,12 +41,18 @@ interface AppState {
   toast: Toast | null;
   biometricType: BiometricType;
   biometricEnabled: boolean;
+  /** El dispositivo tiene biométrico enrolado Y hay credenciales guardadas
+   *  de un login previo → se puede ofrecer "Entrar con Face ID / huella". */
+  biometricAvailable: boolean;
   configOk: boolean;
   notifications: AppNotification[];
 
   // acciones
   bootstrap: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ needsOtp: boolean }>;
+  /** Login con biométrico: valida Face ID/huella y reusa las credenciales
+   *  guardadas del último login. Requiere biometricAvailable. */
+  loginWithBiometrics: () => Promise<{ needsOtp: boolean }>;
   onOtpVerified: () => Promise<void>;
   unlock: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -119,6 +126,8 @@ const Ctx = createContext<AppState | null>(null);
 const BIO_ENABLED_KEY = 'az.biometricEnabled';
 const BIO_TYPE_KEY = 'az.biometricType';
 const LOCALE_PREF_KEY = 'az.localePref';
+// Credenciales cifradas en el Keychain/Keystore para el login con Face ID/huella.
+const BIO_CREDS_KEY = 'az.bioCreds';
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<SessionPhase>('loading');
@@ -131,6 +140,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const [biometricType, setBiometricTypeState] = useState<BiometricType>('face');
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localeRef = useRef<Locale>(locale);
@@ -233,6 +243,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {}
 
+    // Detecta si el dispositivo tiene biométrico enrolado y qué tipo, y si hay
+    // credenciales guardadas → habilita el botón "Entrar con Face ID/huella".
+    try {
+      const [hasHw, enrolled, types, creds] = await Promise.all([
+        LocalAuthentication.hasHardwareAsync(),
+        LocalAuthentication.isEnrolledAsync(),
+        LocalAuthentication.supportedAuthenticationTypesAsync(),
+        SecureStore.getItemAsync(BIO_CREDS_KEY),
+      ]);
+      const isFace = types.includes(
+        LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION,
+      );
+      setBiometricTypeState(isFace ? 'face' : 'fingerprint');
+      setBiometricAvailable(!!(hasHw && enrolled && creds));
+    } catch {}
+
     if (!CONFIG_OK) {
       setPhase('unauth');
       return;
@@ -261,6 +287,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<{ needsOtp: boolean }> => {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) throw new Error(error.message);
+      // Guarda las credenciales cifradas (Keychain/Keystore) para permitir el
+      // login biométrico la próxima vez, y marca el biométrico como disponible
+      // si el dispositivo lo soporta.
+      try {
+        await SecureStore.setItemAsync(
+          BIO_CREDS_KEY,
+          JSON.stringify({ email: email.trim(), password }),
+        );
+        const [hasHw, enrolled] = await Promise.all([
+          LocalAuthentication.hasHardwareAsync(),
+          LocalAuthentication.isEnrolledAsync(),
+        ]);
+        setBiometricAvailable(!!(hasHw && enrolled));
+      } catch {}
       try {
         await otpLoginSuccess();
       } catch {}
@@ -291,6 +331,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     [refreshContainers, refreshNotifications],
   );
+
+  const loginWithBiometrics = useCallback(async (): Promise<{ needsOtp: boolean }> => {
+    const raw = await SecureStore.getItemAsync(BIO_CREDS_KEY);
+    if (!raw) throw new Error('NO_CREDS');
+    const res = await LocalAuthentication.authenticateAsync({
+      promptMessage: t('bioPrompt'),
+      cancelLabel: t('bioCancel'),
+      disableDeviceFallback: false,
+    });
+    if (!res.success) throw new Error('BIO_CANCELLED');
+    let creds: { email: string; password: string };
+    try {
+      creds = JSON.parse(raw);
+    } catch {
+      await SecureStore.deleteItemAsync(BIO_CREDS_KEY).catch(() => {});
+      throw new Error('NO_CREDS');
+    }
+    return signIn(creds.email, creds.password);
+  }, [signIn, t]);
 
   const onOtpVerified = useCallback(async () => {
     setPhase('ready');
@@ -358,9 +417,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toast,
     biometricType,
     biometricEnabled,
+    biometricAvailable,
     configOk: CONFIG_OK,
     bootstrap,
     signIn,
+    loginWithBiometrics,
     onOtpVerified,
     unlock,
     signOut,

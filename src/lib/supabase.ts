@@ -23,18 +23,23 @@ AppState.addEventListener('change', (state) => {
 });
 
 export async function getAccessToken(): Promise<string | null> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) {
-    const { data } = await supabase.auth.refreshSession();
-    return data.session?.access_token ?? null;
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    // Sin sesión no hay refresh token que renovar: devolvemos null en vez de
+    // forzar refreshSession(), que dispararía "Invalid Refresh Token" cuando el
+    // usuario todavía no inició sesión (o la sesión guardada ya expiró).
+    if (!session) return null;
+    const expiresAt = session.expires_at ?? 0;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (expiresAt - nowSec < 60) {
+      const { data } = await supabase.auth.refreshSession();
+      return data.session?.access_token ?? session.access_token;
+    }
+    return session.access_token;
+  } catch {
+    // Refresh fallido (token revocado/expirado) → tratamos como sin sesión.
+    return null;
   }
-  const expiresAt = session.expires_at ?? 0;
-  const nowSec = Math.floor(Date.now() / 1000);
-  if (expiresAt - nowSec < 60) {
-    const { data } = await supabase.auth.refreshSession();
-    return data.session?.access_token ?? session.access_token;
-  }
-  return session.access_token;
 }
