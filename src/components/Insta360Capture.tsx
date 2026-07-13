@@ -3,9 +3,11 @@
 // módulo nativo `src/native/insta360.ts`. Si el módulo no está compilado en el
 // build, muestra un aviso en vez de romper.
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, View } from 'react-native';
+import { Animated, Easing, Linking, View } from 'react-native';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { alpha, colors, radius } from '../theme/tokens';
 import { AppText, Button, Tap, haptic } from './ui';
+import { GlobeSpinner } from './GlobeSpinner';
 import { Icon } from './Icon';
 import { uploadInspectionMedia } from '../lib/api/inspections';
 import {
@@ -21,7 +23,32 @@ import {
 } from '../native/insta360';
 import { useApp } from '../store/AppContext';
 
-type Phase = Insta360State | 'uploading' | 'done';
+type Phase = Insta360State | 'processing' | 'uploading' | 'done';
+
+// Barra de progreso moderna (track + fill animado con gradiente navy).
+function ProgressBar({ value }: { value: number }) {
+  const w = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(w, {
+      toValue: Math.max(0, Math.min(1, value)),
+      duration: 250,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [value, w]);
+  return (
+    <View style={{ height: 8, borderRadius: 4, backgroundColor: alpha(colors.navy500, 0.12), overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          height: '100%',
+          borderRadius: 4,
+          backgroundColor: colors.navy500,
+          width: w.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+        }}
+      />
+    </View>
+  );
+}
 
 async function openWifiSettings() {
   try {
@@ -63,12 +90,20 @@ export function Insta360Capture({
   useEffect(() => {
     if (!available) return;
     const off = onInsta360StateChange((s) => {
-      setPhase((prev) =>
-        prev === 'recording' || prev === 'uploading' || prev === 'done' ? prev : (s as Phase),
-      );
+      // El listener solo refleja la CONEXIÓN inicial; durante un flujo activo
+      // (grabar/procesar/subir) manda el propio componente.
+      setPhase((prev) => {
+        const busy =
+          prev === 'recording' ||
+          prev === 'processing' ||
+          prev === 'downloading' ||
+          prev === 'uploading' ||
+          prev === 'done';
+        return busy ? prev : (s as Phase);
+      });
       setCameraName(getCameraName());
     });
-    const offProg = onInsta360DownloadProgress((p) => setProgress(p));
+    const offProg = onInsta360DownloadProgress((p) => setProgress(p)); // 0-1
     return () => {
       off();
       offProg();
@@ -76,6 +111,17 @@ export function Insta360Capture({
       disconnectCamera().catch(() => {});
     };
   }, [available]);
+
+  // Mantiene la pantalla encendida mientras la cámara está en uso, para que el
+  // bloqueo automático no suspenda la app y corte la conexión (videos largos).
+  useEffect(() => {
+    const active = phase !== 'disconnected' && phase !== 'connecting';
+    if (active) activateKeepAwakeAsync('insta360').catch(() => {});
+    else deactivateKeepAwake('insta360').catch(() => {});
+    return () => {
+      deactivateKeepAwake('insta360').catch(() => {});
+    };
+  }, [phase]);
 
   // Cronómetro de grabación.
   useEffect(() => {
@@ -142,15 +188,19 @@ export function Insta360Capture({
 
   const stopRec = async () => {
     if (!inspectionId) return;
+    // Feedback inmediato (sin delay): la UI pasa a "Procesando" al instante.
+    setPhase('processing');
+    setProgress(0);
+    haptic('medium');
     try {
-      haptic('medium');
-      const video = await stopRecording(); // pasa a 'downloading' vía evento
+      const video = await stopRecording();
       setPhase('uploading');
       setProgress(0);
       const ext = video.ext || 'mp4';
       const mime = ext === 'mp4' ? 'video/mp4' : 'application/octet-stream';
+      // putSigned reporta 0-100 → normalizamos a 0-1.
       await uploadInspectionMedia(inspectionId, 'panorama_360', video.uri, mime, (pct) =>
-        setProgress(pct),
+        setProgress(pct / 100),
       );
       setPhase('done');
       haptic('success');
@@ -162,8 +212,14 @@ export function Insta360Capture({
   };
 
   const connected =
-    phase === 'connected' || phase === 'recording' || phase === 'downloading' || phase === 'uploading' || phase === 'done';
+    phase === 'connected' ||
+    phase === 'recording' ||
+    phase === 'processing' ||
+    phase === 'downloading' ||
+    phase === 'uploading' ||
+    phase === 'done';
   const connecting = phase === 'connecting';
+  const busy = phase === 'processing' || phase === 'downloading' || phase === 'uploading';
 
   // ── No conectada: emparejamiento guiado ─────────────────────
   if (!connected) {
@@ -241,14 +297,24 @@ export function Insta360Capture({
             {es ? 'Grabar otro' : 'Record another'}
           </Button>
         </View>
-      ) : phase === 'downloading' || phase === 'uploading' ? (
-        <View style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }}>
-          <ActivityIndicator color={colors.navy500} />
-          <AppText style={{ color: colors.ink60, fontSize: 13 }}>
-            {(phase === 'downloading'
-              ? es ? 'Descargando video… ' : 'Downloading video… '
-              : es ? 'Subiendo… ' : 'Uploading… ') + Math.round(progress * 100) + '%'}
+      ) : busy ? (
+        <View style={{ alignItems: 'center', gap: 14, paddingVertical: 16, paddingHorizontal: 6 }}>
+          <GlobeSpinner size={54} />
+          <AppText weight="600" style={{ color: colors.ink, fontSize: 15 }}>
+            {phase === 'processing'
+              ? es ? 'Procesando video 360…' : 'Processing 360 video…'
+              : phase === 'downloading'
+                ? es ? 'Descargando de la cámara…' : 'Downloading from camera…'
+                : es ? 'Subiendo al sistema…' : 'Uploading…'}
           </AppText>
+          <View style={{ width: '100%', gap: 6 }}>
+            <ProgressBar value={progress} />
+            <AppText style={{ color: colors.ink50, fontSize: 12, textAlign: 'right' }}>
+              {phase === 'processing' && progress === 0
+                ? (es ? 'Preparando…' : 'Preparing…')
+                : `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`}
+            </AppText>
+          </View>
         </View>
       ) : phase === 'recording' ? (
         <Button variant="danger" icon="check" onPress={stopRec} disabled={!editable}>
