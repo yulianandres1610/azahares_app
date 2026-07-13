@@ -96,6 +96,7 @@ export type InspectionMediaKind =
   | 'valve_top'
   | 'valve_bottom'
   | 'interior'
+  | 'panorama_360'
   | 'refuel_video'
   | 'coa'
   | 'other';

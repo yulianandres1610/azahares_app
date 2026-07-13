@@ -12,6 +12,7 @@ import { Icon, IconName } from '../../components/Icon';
 import { AppText, Button, Card, CheckMark, IconButton, Progress, Ring, Screen, Segmented, Sheet, StatusBadge, Tap, Field, haptic } from '../../components/ui';
 import * as ImagePicker from 'expo-image-picker';
 import { ThermalLabel } from '../../components/Label';
+import { Insta360Capture } from '../../components/Insta360Capture';
 import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
@@ -575,6 +576,10 @@ function VisualPanel({
   const [unavailOpen, setUnavailOpen] = useState(false);
   const [unavailReason, setUnavailReason] = useState('');
   const [unavailBusy, setUnavailBusy] = useState(false);
+  // Método de captura de la inspección visual: cámara del móvil (7 fotos) o
+  // una sola toma 360 con cámara Insta360.
+  const [method, setMethod] = useState<'phone' | 'insta360'>('phone');
+  const es = t.locale === 'es';
   const byKind = useMemo(() => {
     const m: Record<string, string | null> = {};
     ins?.media.forEach((x) => (m[x.kind] = x.url));
@@ -621,47 +626,86 @@ function VisualPanel({
 
   return (
     <View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-        {PHOTO_SLOTS.map((slot) => {
-          const data = byKind[slot.key];
-          const up = uploads[slot.key];
-          const full = slot.key === 'interior';
-          return (
-            <PhotoTile
-              key={slot.key}
-              label={t.slot(slot.key)}
-              data={data}
-              uploading={up}
-              editable={editable}
-              full={full}
-              onPress={() => capture(slot.key)}
-            />
-          );
-        })}
-      </View>
-
       {editable && (
-        <View style={{ marginTop: 18, gap: 10 }}>
-          <Button
-            disabled={vc < 7}
-            icon="check"
-            onPress={async () => {
-              if (!ins) return;
-              try {
-                await Insp.completeVisual(ins.id);
-                showToast(t('refuelInspection'), 'info');
-                onChanged();
-              } catch (e: any) {
-                showToast(e?.message || t('errorGeneric'), 'error');
-              }
-            }}
-          >
-            {t('completeVisual')} {vc < 7 ? `(${left})` : ''}
-          </Button>
-          <Button variant="danger" icon="alert" onPress={() => setUnavailOpen(true)}>
-            {t('markUnavailable')}
-          </Button>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          {([
+            { key: 'phone', icon: 'camera' as IconName, label: es ? 'Cámara del móvil' : 'Phone camera' },
+            { key: 'insta360', icon: 'scan' as IconName, label: 'Insta360 · 360°' },
+          ] as const).map((opt) => {
+            const active = method === opt.key;
+            return (
+              <Tap key={opt.key} onPress={() => setMethod(opt.key)} hapticKind="light" style={{ flex: 1 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    height: 46,
+                    borderRadius: radius.md,
+                    borderWidth: 1.5,
+                    borderColor: active ? colors.navy500 : colors.line,
+                    backgroundColor: active ? alpha(colors.navy500, 0.08) : colors.surface,
+                  }}
+                >
+                  <Icon name={opt.icon} size={17} color={active ? colors.navy500 : colors.ink50} />
+                  <AppText weight="600" style={{ fontSize: 13, color: active ? colors.navy500 : colors.ink60 }}>
+                    {opt.label}
+                  </AppText>
+                </View>
+              </Tap>
+            );
+          })}
         </View>
+      )}
+
+      {editable && method === 'insta360' ? (
+        <Insta360Capture inspectionId={ins?.id ?? null} editable={editable} onUploaded={reload} />
+      ) : (
+        <>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {PHOTO_SLOTS.map((slot) => {
+              const data = byKind[slot.key];
+              const up = uploads[slot.key];
+              const full = slot.key === 'interior';
+              return (
+                <PhotoTile
+                  key={slot.key}
+                  label={t.slot(slot.key)}
+                  data={data}
+                  uploading={up}
+                  editable={editable}
+                  full={full}
+                  onPress={() => capture(slot.key)}
+                />
+              );
+            })}
+          </View>
+
+          {editable && (
+            <View style={{ marginTop: 18, gap: 10 }}>
+              <Button
+                disabled={vc < 7}
+                icon="check"
+                onPress={async () => {
+                  if (!ins) return;
+                  try {
+                    await Insp.completeVisual(ins.id);
+                    showToast(t('refuelInspection'), 'info');
+                    onChanged();
+                  } catch (e: any) {
+                    showToast(e?.message || t('errorGeneric'), 'error');
+                  }
+                }}
+              >
+                {t('completeVisual')} {vc < 7 ? `(${left})` : ''}
+              </Button>
+              <Button variant="danger" icon="alert" onPress={() => setUnavailOpen(true)}>
+                {t('markUnavailable')}
+              </Button>
+            </View>
+          )}
+        </>
       )}
 
       {/* Marcar NO DISPONIBLE — motivo obligatorio */}
@@ -1016,14 +1060,29 @@ function DataField({
 function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspection | null; onChanged: () => void }) {
   const { t, showToast } = useApp();
   const [label, setLabel] = useState<InspectionLabelData | null>(null);
+  const [labelError, setLabelError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const labelRef = useRef<View>(null);
   const isAvailable = ['available', 'in_transit', 'in_vessel', 'delivered'].includes(c.status);
   const es = t.locale === 'es';
 
+  const loadLabel = useCallback(() => {
+    if (!ins) {
+      // Sin inspección abierta no se puede generar la etiqueta: NO la marcamos
+      // como hecha, mostramos un error claro de inspección incompleta.
+      setLabelError(es ? 'Inspección no completada.' : 'Inspection not completed.');
+      return;
+    }
+    setLabelError(null);
+    setLabel(null);
+    Insp.getInspectionLabel(ins.id)
+      .then(setLabel)
+      .catch((e: any) => setLabelError(e?.message || t('errorGeneric')));
+  }, [ins, es, t]);
+
   useEffect(() => {
-    if (ins) Insp.getInspectionLabel(ins.id).then(setLabel).catch(() => {});
-  }, [ins]);
+    loadLabel();
+  }, [loadLabel]);
 
   // Captura la etiqueta renderizada (con QR + barcode reales) como PNG.
   const capture = async (result: 'tmpfile' | 'data-uri') => {
@@ -1066,7 +1125,26 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
         <PanelLabel icon="printer" text={t('thermalLabel')} />
         {/* ref para capturar la etiqueta como imagen al imprimir/compartir */}
         <View ref={labelRef} collapsable={false} style={{ backgroundColor: '#fff', borderRadius: radius.lg }}>
-          {label ? <ThermalLabel data={label} t={t} /> : <ActivityIndicator color={colors.navy500} style={{ marginVertical: 20 }} />}
+          {label ? (
+            <ThermalLabel data={label} t={t} />
+          ) : labelError ? (
+            <View style={{ alignItems: 'center', gap: 12, paddingVertical: 26, paddingHorizontal: 20 }}>
+              <Icon name="alert" size={26} color={colors.amber} />
+              <AppText style={{ color: colors.ink60, fontSize: 13, textAlign: 'center' }}>
+                {labelError}
+              </AppText>
+              <Tap onPress={loadLabel} hapticKind="light">
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 9, paddingHorizontal: 18, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.line }}>
+                  <Icon name="refresh" size={16} color={colors.navy500} />
+                  <AppText weight="600" style={{ color: colors.navy500, fontSize: 13.5 }}>
+                    {es ? 'Reintentar' : 'Retry'}
+                  </AppText>
+                </View>
+              </Tap>
+            </View>
+          ) : (
+            <ActivityIndicator color={colors.navy500} style={{ marginVertical: 20 }} />
+          )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 }}>
           <Icon name="qr" size={14} color={colors.ink40} />
