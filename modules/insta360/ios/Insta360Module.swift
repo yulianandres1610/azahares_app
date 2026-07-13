@@ -10,6 +10,7 @@ import INSCoreMedia
 // devuelve su file:// (equirectangular) para subirla y explorarla en la app.
 public class Insta360Module: Module {
   private var pollTimer: Timer?
+  private var heartbeatTimer: Timer?
   private var connectResolve: ((Any?) -> Void)?
   private var connectReject: ((String, String) -> Void)?
 
@@ -24,10 +25,18 @@ public class Insta360Module: Module {
     }
 
     Function("getCameraName") { () -> String? in
-      // El SDK no expone un nombre estable por API pública; devolvemos el serial
-      // si está disponible, o nil (la UI muestra "Cámara conectada").
-      let cam = INSCameraManager.socket().currentCamera
-      return (cam as AnyObject).value(forKey: "serial") as? String
+      // Seguro ante cámara desconectada: currentCamera puede ser nil y KVC sobre
+      // una key inexistente lanza NSException. Usamos responds(to:) primero.
+      guard let cam = INSCameraManager.socket().currentCamera as? NSObject else {
+        return nil
+      }
+      for key in ["serialNumber", "name"] {
+        if cam.responds(to: NSSelectorFromString(key)),
+           let value = cam.value(forKey: key) as? String, !value.isEmpty {
+          return value
+        }
+      }
+      return nil
     }
 
     // Conecta por WiFi (hotspot de la cámara) y espera a Connected (timeout 30s).
@@ -48,6 +57,7 @@ public class Insta360Module: Module {
     AsyncFunction("disconnect") { (promise: Promise) in
       DispatchQueue.main.async {
         self.stopPolling()
+        self.stopHeartbeat()
         INSCameraManager.socket().shutdown()
         self.sendEvent("stateChange", ["state": "disconnected"])
         promise.resolve(nil)
@@ -96,6 +106,7 @@ public class Insta360Module: Module {
 
     OnDestroy {
       self.stopPolling()
+      self.stopHeartbeat()
     }
   }
 
@@ -120,6 +131,7 @@ public class Insta360Module: Module {
       self.sendEvent("stateChange", ["state": self.stateString(state)])
       if state == .connected {
         self.stopPolling()
+        self.startHeartbeat()  // sin heartbeat la cámara se desconecta a los 30s
         self.connectResolve?(nil)
         self.connectResolve = nil
         self.connectReject = nil
@@ -145,5 +157,17 @@ public class Insta360Module: Module {
   private func stopPolling() {
     pollTimer?.invalidate()
     pollTimer = nil
+  }
+
+  private func startHeartbeat() {
+    stopHeartbeat()
+    heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+      INSCameraManager.socket().commandManager.sendHeartbeats(with: nil)
+    }
+  }
+
+  private func stopHeartbeat() {
+    heartbeatTimer?.invalidate()
+    heartbeatTimer = nil
   }
 }
