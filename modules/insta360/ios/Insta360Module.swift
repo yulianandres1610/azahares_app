@@ -72,16 +72,37 @@ public class Insta360Module: Module {
           promise.reject("NOT_CONNECTED", "La cámara no está conectada.")
           return
         }
-        NSLog("[Insta360] startCapture…")
-        INSCameraManager.shared().commandManager.startCapture(with: nil) { error in
-          if let error = error {
-            NSLog("[Insta360] startCapture ERROR: \(error.localizedDescription)")
-            promise.reject("RECORD_FAILED", error.localizedDescription)
-          } else {
-            NSLog("[Insta360] startCapture OK (grabando)")
-            self.sendEvent("stateChange", ["state": "recording"])
-            promise.resolve(nil)
+        let cmd = INSCameraManager.shared().commandManager
+
+        let doStart = {
+          NSLog("[Insta360] startCapture…")
+          cmd.startCapture(with: nil) { error in
+            if let error = error {
+              NSLog("[Insta360] startCapture ERROR: \(error.localizedDescription)")
+              promise.reject("RECORD_FAILED", error.localizedDescription)
+            } else {
+              NSLog("[Insta360] startCapture OK (grabando)")
+              self.sendEvent("stateChange", ["state": "recording"])
+              promise.resolve(nil)
+            }
           }
+        }
+
+        // Baja la resolución a 2K (1920x960@30) y el bitrate para archivos
+        // livianos → subida rápida (crítico en logística). Best-effort: si la
+        // cámara no acepta la opción, grabamos igual con su resolución.
+        let opts = INSCameraOptions()
+        opts.videoResolution = INSVideoResolution1920x960x30
+        opts.videoBitrate = UInt32(10 * 1024 * 1024) // ~10 Mbps
+        NSLog("[Insta360] setOptions videoResolution 1920x960@30…")
+        cmd.setOptions(
+          opts,
+          forTypes: [NSNumber(value: 1), NSNumber(value: 3)] // 1=VideoResolution, 3=VideoBitrate
+        ) { err, _ in
+          if let err = err {
+            NSLog("[Insta360] setOptions err (ignorado): \(err.localizedDescription)")
+          }
+          doStart()
         }
       }
     }
