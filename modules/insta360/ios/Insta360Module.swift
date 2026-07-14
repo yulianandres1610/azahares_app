@@ -11,13 +11,36 @@ import INSCoreMedia
 public class Insta360Module: Module {
   private var pollTimer: Timer?
   private var heartbeatTimer: Timer?
+  private var exporter: Insta360Exporter?
   private var connectResolve: ((Any?) -> Void)?
   private var connectReject: ((String, String) -> Void)?
 
   public func definition() -> ModuleDefinition {
     Name("Insta360")
 
-    Events("stateChange", "downloadProgress")
+    Events("stateChange", "downloadProgress", "stitchProgress")
+
+    // "Une" (stitch) un .insv en un MP4 equirectangular estándar (para web/app).
+    AsyncFunction("stitchToMp4") { (insvPath: String, promise: Promise) in
+      DispatchQueue.main.async {
+        let inPath = insvPath.replacingOccurrences(of: "file://", with: "")
+        let base = (inPath as NSString).deletingPathExtension
+        let outPath = base + "-eq.mp4"
+        self.exporter = Insta360Exporter(
+          insvPath: inPath,
+          outputPath: outPath,
+          onProgress: { p in self.sendEvent("stitchProgress", ["progress": p]) },
+          onComplete: { ok, err in
+            self.exporter = nil
+            if ok {
+              promise.resolve(["uri": "file://" + outPath])
+            } else {
+              promise.reject("STITCH_FAILED", err ?? "No se pudo unir el video 360.")
+            }
+          }
+        )
+      }
+    }
 
     // Estado actual de la conexión con la cámara.
     Function("getState") { () -> String in

@@ -22,13 +22,15 @@ import {
   isInsta360Available,
   onInsta360DownloadProgress,
   onInsta360StateChange,
+  onInsta360StitchProgress,
   startRecording,
+  stitchToMp4,
   stopRecording,
   type Insta360State,
 } from '../native/insta360';
 import { useApp } from '../store/AppContext';
 
-type Phase = Insta360State | 'processing' | 'uploading' | 'done';
+type Phase = Insta360State | 'processing' | 'stitching' | 'uploading' | 'done';
 
 // Barra de progreso moderna (track + fill animado con gradiente navy).
 function ProgressBar({ value }: { value: number }) {
@@ -126,9 +128,11 @@ export function Insta360Capture({
       setCameraName(getCameraName());
     });
     const offProg = onInsta360DownloadProgress((p) => setProgress(p)); // 0-1
+    const offStitch = onInsta360StitchProgress((p) => setProgress(p)); // 0-1
     return () => {
       off();
       offProg();
+      offStitch();
       if (timerRef.current) clearInterval(timerRef.current);
       // NO desconectamos al desmontar: la conexión es PERSISTENTE hasta que el
       // usuario toque "Desconectar" (puede cambiar de pestaña sin perderla).
@@ -245,24 +249,17 @@ export function Insta360Capture({
     haptic('medium');
     try {
       const video = await stopRecording();
-      // Para subir: Supabase infiere el MIME de la EXTENSIÓN (el .insv → 415), así
-      // que subimos una COPIA .mp4. Para el visor 360 mantenemos el .insv original
-      // (el reproductor esférico del SDK lo necesita).
-      let uploadUri = video.uri;
-      if (!/\.mp4$/i.test(uploadUri)) {
-        const mp4 = uploadUri.replace(/\.[^./]+$/, '') + '.mp4';
-        try {
-          await FileSystem.copyAsync({ from: uploadUri, to: mp4 });
-          uploadUri = mp4;
-        } catch {
-          /* si falla la copia, subimos el original */
-        }
-      }
-      setVideoUri(video.uri); // .insv original → visor 360 esférico
+      setVideoUri(video.uri); // .insv → visor 360 esférico en la app
+      // Une el .insv (doble ojo de pez) a un MP4 equirectangular estándar, que
+      // se ve en la web y en cualquier player. El .insv se conserva para el
+      // visor esférico de la app.
+      setPhase('stitching');
+      setProgress(0);
+      const eq = await stitchToMp4(video.uri);
       setPhase('uploading');
       setProgress(0);
       // putSigned reporta 0-100 → normalizamos a 0-1.
-      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', uploadUri, 'video/mp4', (pct) =>
+      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', eq.uri, 'video/mp4', (pct) =>
         setProgress(pct / 100),
       );
       setMedia(saved);
@@ -323,7 +320,7 @@ export function Insta360Capture({
     phase === 'uploading' ||
     phase === 'done';
   const connecting = phase === 'connecting';
-  const busy = phase === 'processing' || phase === 'downloading' || phase === 'uploading';
+  const busy = phase === 'processing' || phase === 'downloading' || phase === 'stitching' || phase === 'uploading';
 
   // ── No conectada: emparejamiento guiado ─────────────────────
   if (!connected) {
@@ -455,11 +452,14 @@ export function Insta360Capture({
         <View style={{ alignItems: 'center', gap: 14, paddingVertical: 16, paddingHorizontal: 6 }}>
           <GlobeSpinner size={54} />
           <AppText weight="600" style={{ color: colors.ink, fontSize: 15 }}>
-            {phase === 'processing'
-              ? es ? 'Procesando video 360…' : 'Processing 360 video…'
-              : phase === 'downloading'
-                ? es ? 'Descargando de la cámara…' : 'Downloading from camera…'
-                : es ? 'Subiendo al sistema…' : 'Uploading…'}
+            {(
+              {
+                processing: es ? 'Procesando video 360…' : 'Processing 360 video…',
+                downloading: es ? 'Descargando de la cámara…' : 'Downloading from camera…',
+                stitching: es ? 'Uniendo el video 360…' : 'Stitching 360 video…',
+                uploading: es ? 'Subiendo al sistema…' : 'Uploading…',
+              } as Record<string, string>
+            )[phase] ?? ''}
           </AppText>
           <View style={{ width: '100%', gap: 6 }}>
             <ProgressBar value={progress} />

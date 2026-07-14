@@ -41,9 +41,11 @@ export interface Insta360NativeModule {
   stopRecording(): Promise<Insta360Video>;
   /** Borra un archivo de la SD de la cámara (libera memoria tras subir). */
   deleteFromCamera(uri: string): Promise<void>;
+  /** Une (stitch) un .insv en un MP4 equirectangular estándar (web + app). */
+  stitchToMp4(insvPath: string): Promise<{ uri: string }>;
   /** Nombre/modelo de la cámara conectada (X5, X4, ONE X2, …), si hay. */
   getCameraName(): string | null;
-  addListener(event: 'stateChange' | 'downloadProgress', listener: (payload: any) => void): { remove(): void };
+  addListener(event: 'stateChange' | 'downloadProgress' | 'stitchProgress', listener: (payload: any) => void): { remove(): void };
 }
 
 const native = requireOptionalNativeModule<Insta360NativeModule>('Insta360');
@@ -98,6 +100,19 @@ export async function stopRecording(): Promise<Insta360Video> {
 export async function deleteFromCamera(uri: string): Promise<void> {
   if (!native || !uri) return;
   return native.deleteFromCamera(uri);
+}
+
+export async function stitchToMp4(insvPath: string): Promise<{ uri: string }> {
+  if (!native) throw new Error('INSTA360_NOT_AVAILABLE');
+  return native.stitchToMp4(insvPath);
+}
+
+export function onInsta360StitchProgress(listener: (progress: number) => void): () => void {
+  if (!native) return () => {};
+  const sub = native.addListener('stitchProgress', (payload: any) => {
+    listener(typeof payload === 'number' ? payload : (payload?.progress ?? 0));
+  });
+  return () => sub.remove();
 }
 
 export function onInsta360StateChange(
