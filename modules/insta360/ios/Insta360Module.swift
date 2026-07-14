@@ -124,10 +124,30 @@ public class Insta360Module: Module {
               } else {
                 NSLog("[Insta360] fetchResource OK")
                 self.sendEvent("stateChange", ["state": "connected"])
-                promise.resolve(["uri": dest.absoluteString, "ext": ext])
+                // remoteUri = ruta del archivo EN la cámara (para borrarlo luego).
+                promise.resolve(["uri": dest.absoluteString, "remoteUri": uri, "ext": ext])
               }
             }
           )
+        }
+      }
+    }
+
+    // Borra archivos de la SD de la cámara (para liberar memoria tras subir).
+    AsyncFunction("deleteFromCamera") { (uri: String, promise: Promise) in
+      DispatchQueue.main.async {
+        guard !uri.isEmpty else {
+          promise.resolve(nil)
+          return
+        }
+        NSLog("[Insta360] deleteFiles \(uri)")
+        INSCameraManager.shared().commandManager.deleteFiles([uri]) { error in
+          if let error = error {
+            NSLog("[Insta360] deleteFiles ERROR: \(error.localizedDescription)")
+            promise.reject("DELETE_FAILED", error.localizedDescription)
+          } else {
+            promise.resolve(nil)
+          }
         }
       }
     }

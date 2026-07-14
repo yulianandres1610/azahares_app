@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, View } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { alpha, colors, radius } from '../theme/tokens';
 import { AppText, Button, Tap, haptic } from './ui';
@@ -14,6 +15,7 @@ import { deleteInspectionMedia, uploadInspectionMedia } from '../lib/api/inspect
 import type { InspectionMedia } from '../lib/api/types';
 import {
   connectCamera,
+  deleteFromCamera,
   disconnectCamera,
   getCameraName,
   getInsta360State,
@@ -209,18 +211,31 @@ export function Insta360Capture({
     haptic('medium');
     try {
       const video = await stopRecording();
-      setVideoUri(video.uri);
+      // Supabase infiere el MIME de la EXTENSIÓN del archivo, no del header. El
+      // video 360 llega como .insv (extensión desconocida → octet-stream → 415).
+      // Lo renombramos a .mp4 para que el bucket (que acepta video/mp4) lo tome.
+      let uploadUri = video.uri;
+      if (!/\.mp4$/i.test(uploadUri)) {
+        const mp4 = uploadUri.replace(/\.[^./]+$/, '') + '.mp4';
+        try {
+          await FileSystem.moveAsync({ from: uploadUri, to: mp4 });
+          uploadUri = mp4;
+        } catch {
+          /* si falla el rename, intentamos subir el original */
+        }
+      }
+      setVideoUri(uploadUri);
       setPhase('uploading');
       setProgress(0);
-      // El bucket acepta video/mp4 (como los videos de refuel); el .insv se
-      // sube con ese Content-Type (application/octet-stream lo rechaza: 415).
       // putSigned reporta 0-100 → normalizamos a 0-1.
-      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', video.uri, 'video/mp4', (pct) =>
+      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', uploadUri, 'video/mp4', (pct) =>
         setProgress(pct / 100),
       );
       setMedia(saved);
       setPhase('done');
       haptic('success');
+      // Libera memoria: borra el video de la SD de la cámara tras subir OK.
+      if (video.remoteUri) deleteFromCamera(video.remoteUri).catch(() => {});
       await onUploaded();
     } catch (e: any) {
       setPhase('connected');

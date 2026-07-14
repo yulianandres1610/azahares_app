@@ -23,6 +23,8 @@ export type Insta360State =
 export interface Insta360Video {
   /** file:// local del video 360 ya descargado del dispositivo (.insv/.mp4). */
   uri: string;
+  /** Ruta del archivo EN la cámara (para borrarlo tras subir). */
+  remoteUri?: string;
   ext?: string;
 }
 
@@ -37,6 +39,8 @@ export interface Insta360NativeModule {
   startRecording(): Promise<void>;
   /** Detiene la grabación, descarga el video y devuelve su file:// local. */
   stopRecording(): Promise<Insta360Video>;
+  /** Borra un archivo de la SD de la cámara (libera memoria tras subir). */
+  deleteFromCamera(uri: string): Promise<void>;
   /** Nombre/modelo de la cámara conectada (X5, X4, ONE X2, …), si hay. */
   getCameraName(): string | null;
   addListener(event: 'stateChange' | 'downloadProgress', listener: (payload: any) => void): { remove(): void };
@@ -86,6 +90,11 @@ export async function startRecording(): Promise<void> {
 export async function stopRecording(): Promise<Insta360Video> {
   if (!native) throw new Error('INSTA360_NOT_AVAILABLE');
   return native.stopRecording();
+}
+
+export async function deleteFromCamera(uri: string): Promise<void> {
+  if (!native || !uri) return;
+  return native.deleteFromCamera(uri);
 }
 
 export function onInsta360StateChange(
