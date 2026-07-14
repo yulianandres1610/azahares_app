@@ -665,6 +665,16 @@ function VisualPanel({
           editable={editable}
           onUploaded={reload}
           existingPano={ins?.media.find((m) => m.kind === 'panorama_360') ?? null}
+          onComplete={async () => {
+            if (!ins) return;
+            try {
+              await Insp.completeVisual(ins.id);
+              showToast(t('refuelInspection'), 'info');
+              onChanged();
+            } catch (e: any) {
+              showToast(e?.message || t('errorGeneric'), 'error');
+            }
+          }}
         />
       ) : (
         <>

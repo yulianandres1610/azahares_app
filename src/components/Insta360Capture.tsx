@@ -78,12 +78,15 @@ export function Insta360Capture({
   editable,
   onUploaded,
   existingPano,
+  onComplete,
 }: {
   inspectionId: string | null;
   editable: boolean;
   onUploaded: () => void | Promise<void>;
   /** Video 360 ya subido en esta inspección (persistencia entre pestañas). */
   existingPano?: InspectionMedia | null;
+  /** Completa la inspección visual (pasa al paso refuel). */
+  onComplete?: () => void | Promise<void>;
 }) {
   const { t, showToast } = useApp();
   const es = t.locale === 'es';
@@ -439,6 +442,11 @@ export function Insta360Capture({
               </Tap>
             </View>
           </Modal>
+          {editable && onComplete && (
+            <Button icon="check" onPress={onComplete}>
+              {es ? 'Completar inspección visual' : 'Complete visual inspection'}
+            </Button>
+          )}
           <Button variant="danger" icon="trash" onPress={deleteAndRedo} loading={deleting} disabled={!editable}>
             {es ? 'Eliminar y grabar de nuevo' : 'Delete and record again'}
           </Button>
