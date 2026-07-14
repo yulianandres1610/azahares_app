@@ -77,25 +77,30 @@ export function Insta360Capture({
   inspectionId,
   editable,
   onUploaded,
+  existingPano,
 }: {
   inspectionId: string | null;
   editable: boolean;
   onUploaded: () => void | Promise<void>;
+  /** Video 360 ya subido en esta inspección (persistencia entre pestañas). */
+  existingPano?: InspectionMedia | null;
 }) {
   const { t, showToast } = useApp();
   const es = t.locale === 'es';
   const available = isInsta360Available();
   // La conexión vive a nivel nativo (global). Al montar reflejamos el estado
   // real: si ya estaba conectada (volviste a la pestaña), seguimos conectados.
-  const [phase, setPhase] = useState<Phase>(() =>
-    available ? (getInsta360State() as Phase) : 'disconnected',
-  );
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (existingPano) return 'done'; // ya hay un video 360 subido → persistir
+    return available ? (getInsta360State() as Phase) : 'disconnected';
+  });
   const [progress, setProgress] = useState(0);
   const [cameraName, setCameraName] = useState<string | null>(available ? getCameraName() : null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [videoUri, setVideoUri] = useState<string | null>(null);
-  const [media, setMedia] = useState<InspectionMedia | null>(null);
+  const [media, setMedia] = useState<InspectionMedia | null>(existingPano ?? null);
+  const [loadingVideo, setLoadingVideo] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -136,6 +141,34 @@ export function Insta360Capture({
       deactivateKeepAwake('insta360').catch(() => {});
     };
   }, [phase]);
+
+  // Persistencia: si la inspección ya tiene un video 360 subido, reflejamos el
+  // estado "subido" (no volvemos a "grabar" al cambiar de pestaña).
+  useEffect(() => {
+    if (existingPano) {
+      setMedia(existingPano);
+      setPhase((prev) =>
+        prev === 'recording' || prev === 'processing' || prev === 'uploading' ? prev : 'done',
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingPano?.id]);
+
+  // Descarga el video ya subido (de Supabase) para verlo en el visor 360.
+  const viewExisting = async () => {
+    if (!media?.url || loadingVideo) return;
+    setLoadingVideo(true);
+    try {
+      const dest = FileSystem.cacheDirectory + `pano360-${media.id}.mp4`;
+      const info = await FileSystem.getInfoAsync(dest);
+      if (!info.exists) await FileSystem.downloadAsync(media.url, dest);
+      setVideoUri(dest);
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setLoadingVideo(false);
+    }
+  };
 
   // Cronómetro de grabación.
   useEffect(() => {
@@ -363,6 +396,13 @@ export function Insta360Capture({
               {es ? 'Video 360 subido' : '360 video uploaded'}
             </AppText>
           </View>
+          {/* Video ya subido (persistido) pero aún no descargado para el visor */}
+          {!videoUri && media && (
+            <Button variant="outline" icon="video" onPress={viewExisting} loading={loadingVideo} disabled={!media.url}>
+              {es ? 'Ver video 360' : 'View 360 video'}
+            </Button>
+          )}
+
           {/* Visor 360 esférico navegable (arrastrar para mirar alrededor) */}
           {videoUri && Insta360PlayerNative && !fullscreen && (
             <View style={{ width: '100%', aspectRatio: 1, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>

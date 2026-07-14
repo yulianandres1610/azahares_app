@@ -660,7 +660,12 @@ function VisualPanel({
       )}
 
       {editable && method === 'insta360' ? (
-        <Insta360Capture inspectionId={ins?.id ?? null} editable={editable} onUploaded={reload} />
+        <Insta360Capture
+          inspectionId={ins?.id ?? null}
+          editable={editable}
+          onUploaded={reload}
+          existingPano={ins?.media.find((m) => m.kind === 'panorama_360') ?? null}
+        />
       ) : (
         <>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
