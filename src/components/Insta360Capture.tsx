@@ -242,24 +242,59 @@ export function Insta360Capture({
   };
 
   const stopRec = async () => {
-    if (!inspectionId) return;
     // Feedback inmediato (sin delay): la UI pasa a "Procesando" al instante.
+    // Detener SIEMPRE debe funcionar aunque falte inspección o cambie `editable`:
+    // primero paramos la cámara y luego decidimos si podemos subir.
     setPhase('processing');
     setProgress(0);
     haptic('medium');
     try {
       const video = await stopRecording();
+      if (!inspectionId) {
+        setPhase('connected');
+        showToast(
+          es ? 'No hay una inspección activa para subir el video.' : 'No active inspection to upload the video.',
+          'error',
+        );
+        return;
+      }
       setVideoUri(video.uri); // .insv → visor 360 esférico en la app
       // Une el .insv (doble ojo de pez) a un MP4 equirectangular estándar, que
       // se ve en la web y en cualquier player. El .insv se conserva para el
-      // visor esférico de la app.
+      // visor esférico de la app. Si el "unir" falla o tarda demasiado, NO
+      // dejamos la inspección trabada: subimos el video crudo como .mp4 (en la
+      // web podría no navegarse, pero el flujo se completa).
       setPhase('stitching');
       setProgress(0);
-      const eq = await stitchToMp4(video.uri);
+      let uploadUri = video.uri;
+      try {
+        // Carrera contra un timeout: si el stitch se cuelga, seguimos con el crudo.
+        const eq = await Promise.race([
+          stitchToMp4(video.uri),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error('STITCH_TIMEOUT')), 180000)),
+        ]);
+        uploadUri = eq.uri;
+      } catch (stitchErr) {
+        // Fallback: copiar el video a extensión .mp4 (Supabase valida el MIME por
+        // la extensión). El visor esférico de la app usa el .insv original.
+        try {
+          const raw = video.uri.replace('file://', '');
+          const dot = raw.lastIndexOf('.');
+          const mp4Path = (dot > 0 ? raw.slice(0, dot) : raw) + '-raw.mp4';
+          await FileSystem.copyAsync({ from: video.uri, to: 'file://' + mp4Path });
+          uploadUri = 'file://' + mp4Path;
+        } catch {
+          uploadUri = video.uri;
+        }
+        showToast(
+          es ? 'No se pudo unir el 360; se subió el video sin unir.' : 'Could not stitch 360; uploaded raw video.',
+          'warn',
+        );
+      }
       setPhase('uploading');
       setProgress(0);
       // putSigned reporta 0-100 → normalizamos a 0-1.
-      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', eq.uri, 'video/mp4', (pct) =>
+      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', uploadUri, 'video/mp4', (pct) =>
         setProgress(pct / 100),
       );
       setMedia(saved);
@@ -471,7 +506,9 @@ export function Insta360Capture({
           </View>
         </View>
       ) : phase === 'recording' ? (
-        <Button variant="danger" icon="check" onPress={stopRec} disabled={!editable}>
+        // Detener NUNCA se deshabilita: una grabación en curso debe poder pararse
+        // y subirse siempre (no depende de `editable`).
+        <Button variant="danger" icon="check" onPress={stopRec}>
           {es ? 'Detener y subir' : 'Stop and upload'}
         </Button>
       ) : (

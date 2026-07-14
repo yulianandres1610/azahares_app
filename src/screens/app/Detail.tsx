@@ -55,18 +55,24 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       : 1
     : 2;
 
-  const loadInspection = useCallback(async () => {
-    if (!c) return;
-    try {
-      const list = await Insp.listInspections(c.id);
-      const current = list.find((i) => i.stage !== 'completed') || list[0] || null;
-      setIns(current);
-    } catch (e: any) {
-      showToast(friendlyError(e, t), 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [c, showToast, t]);
+  const loadInspection = useCallback(
+    async (silent = false) => {
+      if (!c) return;
+      try {
+        const list = await Insp.listInspections(c.id);
+        const current = list.find((i) => i.stage !== 'completed') || list[0] || null;
+        setIns(current);
+      } catch (e: any) {
+        // En recargas de fondo (volver a primer plano) no molestamos con toasts:
+        // durante la captura Insta360 el teléfono está en el WiFi de la cámara
+        // (sin internet) y la recarga fallaría sin que importe.
+        if (!silent) showToast(friendlyError(e, t), 'error');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [c, showToast, t],
+  );
 
   useEffect(() => {
     loadInspection();
@@ -92,7 +98,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   // eliminada o media borrada). El store global ya refresca los contenedores.
   useEffect(() => {
     const sub = RNAppState.addEventListener('change', (st) => {
-      if (st === 'active') loadInspection();
+      if (st === 'active') loadInspection(true); // silencioso
     });
     return () => sub.remove();
   }, [loadInspection]);
