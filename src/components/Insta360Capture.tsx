@@ -5,15 +5,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, View } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { alpha, colors, radius } from '../theme/tokens';
 import { AppText, Button, Tap, haptic } from './ui';
 import { GlobeSpinner } from './GlobeSpinner';
 import { Icon } from './Icon';
-import { uploadInspectionMedia } from '../lib/api/inspections';
+import { deleteInspectionMedia, uploadInspectionMedia } from '../lib/api/inspections';
+import type { InspectionMedia } from '../lib/api/types';
 import {
   connectCamera,
   disconnectCamera,
   getCameraName,
+  getInsta360State,
   isInsta360Available,
   onInsta360DownloadProgress,
   onInsta360StateChange,
@@ -80,18 +83,29 @@ export function Insta360Capture({
   const { t, showToast } = useApp();
   const es = t.locale === 'es';
   const available = isInsta360Available();
-  const [phase, setPhase] = useState<Phase>('disconnected');
+  // La conexión vive a nivel nativo (global). Al montar reflejamos el estado
+  // real: si ya estaba conectada (volviste a la pestaña), seguimos conectados.
+  const [phase, setPhase] = useState<Phase>(() =>
+    available ? (getInsta360State() as Phase) : 'disconnected',
+  );
   const [progress, setProgress] = useState(0);
-  const [cameraName, setCameraName] = useState<string | null>(null);
+  const [cameraName, setCameraName] = useState<string | null>(available ? getCameraName() : null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [media, setMedia] = useState<InspectionMedia | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Reproductor del video grabado (archivo local ya descargado).
+  const player = useVideoPlayer(videoUri, (p) => {
+    p.loop = true;
+  });
 
   useEffect(() => {
     if (!available) return;
     const off = onInsta360StateChange((s) => {
-      // El listener solo refleja la CONEXIÓN inicial; durante un flujo activo
-      // (grabar/procesar/subir) manda el propio componente.
+      // El listener solo refleja la CONEXIÓN; durante un flujo activo
+      // (grabar/procesar/subir/listo) manda el propio componente.
       setPhase((prev) => {
         const busy =
           prev === 'recording' ||
@@ -108,7 +122,8 @@ export function Insta360Capture({
       off();
       offProg();
       if (timerRef.current) clearInterval(timerRef.current);
-      disconnectCamera().catch(() => {});
+      // NO desconectamos al desmontar: la conexión es PERSISTENTE hasta que el
+      // usuario toque "Desconectar" (puede cambiar de pestaña sin perderla).
     };
   }, [available]);
 
@@ -194,20 +209,50 @@ export function Insta360Capture({
     haptic('medium');
     try {
       const video = await stopRecording();
+      setVideoUri(video.uri);
       setPhase('uploading');
       setProgress(0);
-      const ext = video.ext || 'mp4';
-      const mime = ext === 'mp4' ? 'video/mp4' : 'application/octet-stream';
+      // El bucket acepta video/mp4 (como los videos de refuel); el .insv se
+      // sube con ese Content-Type (application/octet-stream lo rechaza: 415).
       // putSigned reporta 0-100 → normalizamos a 0-1.
-      await uploadInspectionMedia(inspectionId, 'panorama_360', video.uri, mime, (pct) =>
+      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', video.uri, 'video/mp4', (pct) =>
         setProgress(pct / 100),
       );
+      setMedia(saved);
       setPhase('done');
       haptic('success');
       await onUploaded();
     } catch (e: any) {
       setPhase('connected');
       showToast(e?.message || t('errorGeneric'), 'error');
+    }
+  };
+
+  // Desconecta explícitamente (la conexión es persistente hasta que se pida).
+  const disconnect = async () => {
+    await disconnectCamera().catch(() => {});
+    setPhase('disconnected');
+    setVideoUri(null);
+    setMedia(null);
+  };
+
+  // Elimina el video subido y vuelve a grabar.
+  const deleteAndRedo = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      if (media && inspectionId) {
+        await deleteInspectionMedia(inspectionId, media.id);
+        await onUploaded();
+      }
+      setMedia(null);
+      setVideoUri(null);
+      setProgress(0);
+      setPhase('connected');
+    } catch (e: any) {
+      showToast(e?.message || t('errorGeneric'), 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -288,13 +333,24 @@ export function Insta360Capture({
       )}
 
       {phase === 'done' ? (
-        <View style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }}>
-          <Icon name="check" size={30} color={colors.success} />
-          <AppText weight="600" style={{ color: colors.success, fontSize: 15 }}>
-            {es ? 'Video 360 subido' : '360 video uploaded'}
+        <View style={{ gap: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon name="check" size={20} color={colors.success} />
+            <AppText weight="600" style={{ color: colors.success, fontSize: 15 }}>
+              {es ? 'Video 360 subido' : '360 video uploaded'}
+            </AppText>
+          </View>
+          {/* Visor del video grabado */}
+          {videoUri && (
+            <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
+              <VideoView player={player} style={{ flex: 1 }} contentFit="contain" nativeControls />
+            </View>
+          )}
+          <AppText style={{ fontSize: 12, color: colors.ink50, textAlign: 'center' }}>
+            {es ? 'Video 360° (formato Insta360). Podés eliminarlo y volver a grabar.' : '360° video (Insta360 format). You can delete it and record again.'}
           </AppText>
-          <Button variant="outline" icon="video" onPress={() => setPhase('connected')} style={{ marginTop: 4 }}>
-            {es ? 'Grabar otro' : 'Record another'}
+          <Button variant="danger" icon="trash" onPress={deleteAndRedo} loading={deleting} disabled={!editable}>
+            {es ? 'Eliminar y grabar de nuevo' : 'Delete and record again'}
           </Button>
         </View>
       ) : busy ? (
@@ -324,6 +380,15 @@ export function Insta360Capture({
         <Button icon="video" onPress={startRec} disabled={!editable}>
           {es ? 'Empezar a grabar' : 'Start recording'}
         </Button>
+      )}
+
+      {/* Desconectar (la conexión persiste hasta que se toque aquí) */}
+      {phase !== 'recording' && !busy && (
+        <Tap onPress={disconnect} style={{ alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16 }}>
+          <AppText weight="600" style={{ color: colors.ink50, fontSize: 13.5 }}>
+            {es ? 'Desconectar cámara' : 'Disconnect camera'}
+          </AppText>
+        </Tap>
       )}
     </View>
   );
