@@ -145,8 +145,8 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
                 {['fuel', 'dry', 'reefer'].map((ty) => {
                   const on = d.type === ty;
                   return (
-                    <Tap key={ty} onPress={() => pickType(ty)} hapticKind={null} style={{ flex: 1, borderRadius: radius.md, overflow: 'hidden', ...(on ? shadows.sm : {}) }}>
-                      <View style={{ paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', gap: 9, backgroundColor: on ? 'transparent' : colors.surface, borderWidth: on ? 0 : 1.5, borderColor: colors.line, borderRadius: radius.md }}>
+                    <Tap key={ty} onPress={() => pickType(ty)} hapticKind={null} style={{ flex: 1, borderRadius: radius.md, ...(on ? shadows.sm : {}) }}>
+                      <View style={{ paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', gap: 9, backgroundColor: on ? 'transparent' : colors.surface, borderWidth: on ? 0 : 1.5, borderColor: colors.line, borderRadius: radius.md, overflow: 'hidden' }}>
                         {on && <LinearGradient colors={gradients.navy} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />}
                         <Icon name={TYPES[ty].icon} size={26} color={on ? '#fff' : colors.ink60} />
                         <AppText weight="600" style={{ fontSize: 13, color: on ? '#fff' : colors.ink60 }}>

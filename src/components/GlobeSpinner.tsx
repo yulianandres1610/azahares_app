@@ -5,7 +5,21 @@ import Svg, { Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native
 import { alpha, colors } from '../theme/tokens';
 import { GLOBE } from './AuthBackdrop';
 
-export function GlobeSpinner({ size = 168, showHalo = true }: { size?: number; showHalo?: boolean }) {
+export function GlobeSpinner({
+  size = 168,
+  showHalo = true,
+  tint,
+}: {
+  size?: number;
+  showHalo?: boolean;
+  /** Color base (globo + cometa). Por defecto blanco (para fondos oscuros).
+   *  Pasar un navy para usarlo sobre fondos claros (p. ej. pull-to-refresh). */
+  tint?: string;
+}) {
+  const base = tint ?? '#ffffff';
+  const cometFrom = tint ?? colors.accent;
+  const haloColor = tint ?? colors.accent;
+  const ringColor = tint ? alpha(tint, 0.18) : 'rgba(255,255,255,0.12)';
   const globe = Math.round(size * 0.64);
   const ring = Math.round(size * 0.94);
   const spin = useRef(new Animated.Value(0)).current;
@@ -48,21 +62,21 @@ export function GlobeSpinner({ size = 168, showHalo = true }: { size?: number; s
             width: size * 0.78,
             height: size * 0.78,
             borderRadius: 999,
-            backgroundColor: alpha(colors.accent, 0.5),
+            backgroundColor: alpha(haloColor, 0.5),
             opacity: haloOpacity,
             transform: [{ scale: haloScale }],
           }}
         />
       )}
       {/* anillo de profundidad estático */}
-      <View style={{ position: 'absolute', width: ring, height: ring, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }} />
+      <View style={{ position: 'absolute', width: ring, height: ring, borderRadius: 999, borderWidth: 1, borderColor: ringColor }} />
       {/* anillo cometa rotando */}
       <Animated.View style={{ position: 'absolute', width: ring, height: ring, transform: [{ rotate }] }}>
         <Svg width={ring} height={ring} style={{ transform: [{ rotate: '-90deg' }] }}>
           <Defs>
             <SvgGrad id="comet" x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0" stopColor={colors.accent} stopOpacity="0" />
-              <Stop offset="1" stopColor="#ffffff" stopOpacity="1" />
+              <Stop offset="0" stopColor={cometFrom} stopOpacity="0" />
+              <Stop offset="1" stopColor={base} stopOpacity="1" />
             </SvgGrad>
           </Defs>
           <Circle
@@ -85,8 +99,8 @@ export function GlobeSpinner({ size = 168, showHalo = true }: { size?: number; s
             width: 8,
             height: 8,
             borderRadius: 999,
-            backgroundColor: '#fff',
-            shadowColor: colors.accent,
+            backgroundColor: base,
+            shadowColor: haloColor,
             shadowOpacity: 1,
             shadowRadius: 8,
             shadowOffset: { width: 0, height: 0 },
@@ -95,7 +109,7 @@ export function GlobeSpinner({ size = 168, showHalo = true }: { size?: number; s
       </Animated.View>
       {/* globo respirando */}
       <Animated.View style={{ transform: [{ scale }] }}>
-        <Image source={GLOBE} resizeMode="contain" style={{ width: globe, height: globe, tintColor: '#ffffff' }} />
+        <Image source={GLOBE} resizeMode="contain" style={{ width: globe, height: globe, tintColor: base }} />
       </Animated.View>
     </View>
   );

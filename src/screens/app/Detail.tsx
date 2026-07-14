@@ -21,6 +21,7 @@ import { friendlyError } from '../../lib/api/client';
 import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
 import { RemoteImage } from '../../components/RemoteImage';
+import { ImageLightbox } from '../../components/ImageLightbox';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
 import type { T } from '../../i18n';
 import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
@@ -398,6 +399,7 @@ function ContainerInfoPanel({
   const tt = TYPES[cc.type] ?? { icon: 'cube' as IconName };
   const [imgs, setImgs] = useState<ContainerImage[]>([]);
   const [imgsLoading, setImgsLoading] = useState(true);
+  const [viewUrl, setViewUrl] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     setImgsLoading(true);
@@ -434,7 +436,7 @@ function ContainerInfoPanel({
         ) : photos.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
             {photos.map((im, i) => (
-              <CreationPhoto key={im.id} url={im.url} label={t(SIDE_KEYS[i] ?? 'photoOpt')} w={tileW} h={tileH} />
+              <CreationPhoto key={im.id} url={im.url} label={t(SIDE_KEYS[i] ?? 'photoOpt')} w={tileW} h={tileH} onView={setViewUrl} />
             ))}
           </View>
         ) : (
@@ -470,19 +472,31 @@ function ContainerInfoPanel({
 
       {/* GPS */}
       <LocationCard c={cc} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
+
+      {/* Visor de foto a pantalla completa */}
+      <ImageLightbox url={viewUrl} onClose={() => setViewUrl(null)} />
     </View>
   );
 }
 
 // Foto de creación: descarga vía expo-file-system y muestra desde archivo local.
-function CreationPhoto({ url, label, w, h }: { url: string | null; label: string; w: number; h: number }) {
+function CreationPhoto({ url, label, w, h, onView }: { url: string | null; label: string; w: number; h: number; onView?: (url: string) => void }) {
   return (
-    <View style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}>
+    <Tap
+      onPress={() => url && onView?.(url)}
+      hapticKind={null}
+      style={{ width: w, height: h, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1c2740' }}
+    >
       <RemoteImage url={url} />
       <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
         <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{label}</AppText>
       </View>
-    </View>
+      {url ? (
+        <View style={{ position: 'absolute', bottom: 8, right: 8, width: 28, height: 28, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="search" size={14} color="#fff" />
+        </View>
+      ) : null}
+    </Tap>
   );
 }
 
@@ -597,6 +611,7 @@ function VisualPanel({
 }) {
   const { t, showToast } = useApp();
   const [uploads, setUploads] = useState<Record<string, number>>({});
+  const [viewUrl, setViewUrl] = useState<string | null>(null);
   const [unavailOpen, setUnavailOpen] = useState(false);
   const [unavailReason, setUnavailReason] = useState('');
   const [unavailBusy, setUnavailBusy] = useState(false);
@@ -721,6 +736,7 @@ function VisualPanel({
                   editable={editable}
                   full={full}
                   onPress={() => capture(slot.key)}
+                  onView={(u) => setViewUrl(u)}
                 />
               );
             })}
@@ -790,6 +806,9 @@ function VisualPanel({
           </Button>
         </View>
       </Sheet>
+
+      {/* Visor de foto a pantalla completa */}
+      <ImageLightbox url={viewUrl} onClose={() => setViewUrl(null)} />
     </View>
   );
 }
@@ -801,6 +820,7 @@ function PhotoTile({
   editable,
   full,
   onPress,
+  onView,
 }: {
   label: string;
   data: string | null | undefined;
@@ -808,6 +828,8 @@ function PhotoTile({
   editable: boolean;
   full?: boolean;
   onPress: () => void;
+  /** Ver la foto en pantalla completa (solo cuando ya hay imagen). */
+  onView?: (url: string) => void;
 }) {
   const { t } = useApp();
   const has = !!data;
@@ -818,7 +840,7 @@ function PhotoTile({
   const h = full ? Math.round(gridW / 2) : Math.round(colW * 0.81);
   return (
     <Tap
-      onPress={onPress}
+      onPress={has && onView ? () => onView(data!) : onPress}
       hapticKind={null}
       style={{
         width: w,
@@ -856,10 +878,22 @@ function PhotoTile({
           </AppText>
         </View>
       )}
-      {has && editable && uploading == null && (
-        <View style={{ position: 'absolute', bottom: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="refresh" size={16} color="#fff" />
-        </View>
+      {has && uploading == null && (
+        editable ? (
+          // Botón para reemplazar la foto (tomarla de nuevo).
+          <Tap
+            onPress={onPress}
+            hapticKind={null}
+            style={{ position: 'absolute', bottom: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Icon name="refresh" size={16} color="#fff" />
+          </Tap>
+        ) : (
+          // Indicador de "ver en pantalla completa".
+          <View style={{ position: 'absolute', bottom: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="search" size={15} color="#fff" />
+          </View>
+        )
       )}
     </Tap>
   );

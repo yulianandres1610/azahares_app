@@ -1,5 +1,5 @@
 // UI primitives portados de ui.jsx a React Native.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -26,6 +26,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { alpha, colors, fonts, gradients, radius, shadows } from '../theme/tokens';
 import { Icon, IconName } from './Icon';
+import { GlobeSpinner } from './GlobeSpinner';
 import { statusMeta } from '../domain';
 import { useT } from '../store/AppContext';
 
@@ -198,6 +199,16 @@ export function Screen({
   onRefresh?: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  // scrollY para animar el spinner de "halar para actualizar" con el overscroll.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const handleScroll = useMemo(
+    () =>
+      Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+        useNativeDriver: false,
+        listener: onScroll as any,
+      }),
+    [scrollY, onScroll],
+  );
   const pad: ViewStyle = {
     paddingTop: padTop ? insets.top : 0,
     paddingBottom: (insets.bottom || 0) + padBottom,
@@ -213,21 +224,53 @@ export function Screen({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       automaticallyAdjustKeyboardInsets
-      onScroll={onScroll}
+      onScroll={onRefresh ? handleScroll : onScroll}
       scrollEventThrottle={16}
       refreshControl={
         onRefresh
-          ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />
+          ? (
+            // RefreshControl nativo TRANSPARENTE: aporta la mecánica (disparo +
+            // el hueco al refrescar), pero el indicador visible es el globo de
+            // Azahares en navy que dibujamos encima.
+            <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor="transparent" colors={['transparent']} />
+          )
           : undefined
       }
     >
       {children}
     </ScrollView>
   );
-  if (!fadeBottom && !fadeTop) return sv;
+  // Overlay del spinner navy: aparece al halar (según el overscroll) y queda
+  // fijo mientras `refreshing` está activo.
+  const refreshOverlay = onRefresh ? (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: (padTop ? insets.top : 0) + 2,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        opacity: refreshing
+          ? 1
+          : scrollY.interpolate({ inputRange: [-70, -18, 0], outputRange: [1, 0, 0], extrapolate: 'clamp' }),
+        transform: [
+          {
+            translateY: refreshing
+              ? 10
+              : scrollY.interpolate({ inputRange: [-70, 0], outputRange: [10, -6], extrapolate: 'clamp' }),
+          },
+        ],
+      }}
+    >
+      <GlobeSpinner size={40} showHalo={false} tint={colors.navy700} />
+    </Animated.View>
+  ) : null;
+  if (!fadeBottom && !fadeTop && !onRefresh) return sv;
   return (
     <View style={{ flex: 1, backgroundColor: bg }}>
       {sv}
+      {refreshOverlay}
       {fadeTop && (
         <LinearGradient
           pointerEvents="none"
