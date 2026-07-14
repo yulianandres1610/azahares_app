@@ -577,9 +577,14 @@ function VisualPanel({
   const [unavailReason, setUnavailReason] = useState('');
   const [unavailBusy, setUnavailBusy] = useState(false);
   // Método de captura de la inspección visual: cámara del móvil (7 fotos) o
-  // una sola toma 360 con cámara Insta360.
-  const [method, setMethod] = useState<'phone' | 'insta360'>('phone');
+  // una sola toma 360 con cámara Insta360. Si ya hay un video 360 subido,
+  // abrimos el método Insta360 para mostrarlo (no los slots de fotos vacíos).
+  const hasPano = !!ins?.media.some((m) => m.kind === 'panorama_360');
+  const [method, setMethod] = useState<'phone' | 'insta360'>(hasPano ? 'insta360' : 'phone');
   const es = t.locale === 'es';
+  useEffect(() => {
+    if (hasPano) setMethod('insta360');
+  }, [hasPano]);
   const byKind = useMemo(() => {
     const m: Record<string, string | null> = {};
     ins?.media.forEach((x) => (m[x.kind] = x.url));
@@ -659,7 +664,7 @@ function VisualPanel({
         </View>
       )}
 
-      {editable && method === 'insta360' ? (
+      {method === 'insta360' ? (
         <Insta360Capture
           inspectionId={ins?.id ?? null}
           editable={editable}
