@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   PressableProps,
+  RefreshControl,
   ScrollView,
   StyleProp,
   Text,
@@ -178,6 +179,8 @@ export function Screen({
   fadeBottom = false,
   fadeTop = false,
   onScroll,
+  refreshing,
+  onRefresh,
 }: {
   children?: React.ReactNode;
   bg?: string;
@@ -190,6 +193,9 @@ export function Screen({
   fadeBottom?: boolean;
   fadeTop?: boolean;
   onScroll?: React.ComponentProps<typeof ScrollView>['onScroll'];
+  /** Habilita "deslizar para actualizar" (sincroniza con la BD). */
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const pad: ViewStyle = {
@@ -209,6 +215,11 @@ export function Screen({
       automaticallyAdjustKeyboardInsets
       onScroll={onScroll}
       scrollEventThrottle={16}
+      refreshControl={
+        onRefresh
+          ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />
+          : undefined
+      }
     >
       {children}
     </ScrollView>

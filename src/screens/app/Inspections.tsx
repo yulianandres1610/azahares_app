@@ -19,7 +19,7 @@ function phaseOf(c: Container): 'inProgress' | 'completed' | 'other' {
 }
 
 export function Inspections() {
-  const { t, containers } = useApp();
+  const { t, containers, containersLoading, refreshContainers } = useApp();
   const nav = useNav();
   const [filter, setFilter] = useState<'all' | 'inProgress' | 'completed'>('all');
   const [q, setQ] = useState('');
@@ -34,7 +34,7 @@ export function Inspections() {
   const nDone = records.filter((r) => r.phase === 'completed').length;
 
   return (
-    <Screen padBottom={108} contentStyle={{ paddingBottom: 120 }} fadeBottom fadeTop>
+    <Screen padBottom={108} contentStyle={{ paddingBottom: 120 }} fadeBottom fadeTop refreshing={containersLoading} onRefresh={refreshContainers}>
       {/* resumen */}
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12 }}>
         <StatCard icon="camera" color={colors.accent} n={nProg} label={t('inProgress')} active={filter === 'inProgress'} onPress={() => setFilter(filter === 'inProgress' ? 'all' : 'inProgress')} />

@@ -13,6 +13,7 @@ import { TYPES } from '../../domain';
 import { useApp } from '../../store/AppContext';
 import { useNav } from '../../store/ShellNav';
 import { createContainer, uploadContainerImage } from '../../lib/api/containers';
+import { friendlyError } from '../../lib/api/client';
 import { startInspection } from '../../lib/api/inspections';
 
 const TILE_W = (Dimensions.get('window').width - 32 - 10) / 2;
@@ -106,7 +107,7 @@ export function NewContainer({ onClose }: { onClose: () => void }) {
       nav.openOverlay({ type: 'detail', id: container.id });
     } catch (e: any) {
       haptic('warn');
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }

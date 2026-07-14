@@ -32,6 +32,8 @@ export function Containers() {
       contentStyle={{ paddingBottom: 120 }}
       fadeBottom
       fadeTop
+      refreshing={containersLoading}
+      onRefresh={refreshContainers}
     >
       <Header
         title={t('containers')}

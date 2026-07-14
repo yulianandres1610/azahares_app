@@ -41,7 +41,7 @@ function Floating({ children, style }: { children: React.ReactNode; style?: any 
 }
 
 export function Home() {
-  const { t, me, containers, notifications } = useApp();
+  const { t, me, containers, notifications, containersLoading, refreshContainers } = useApp();
   const nav = useNav();
   const c = counts(containers);
   const [anim, setAnim] = useState(false);
@@ -66,7 +66,7 @@ export function Home() {
   };
 
   return (
-    <Screen padBottom={108}>
+    <Screen padBottom={108} refreshing={containersLoading} onRefresh={refreshContainers}>
       {/* greeting */}
       <FadeUp style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>

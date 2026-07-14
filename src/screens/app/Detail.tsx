@@ -1,6 +1,6 @@
 // Detalle de contenedor + inspección guiada de 3 pasos (API real).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, View } from 'react-native';
+import { ActivityIndicator, AppState as RNAppState, Dimensions, Image, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -17,6 +17,7 @@ import { PHOTO_SLOTS, TYPES, statusMeta, stepOf, VISUAL_KINDS } from '../../doma
 import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
+import { friendlyError } from '../../lib/api/client';
 import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
 import { RemoteImage } from '../../components/RemoteImage';
@@ -60,7 +61,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       const current = list.find((i) => i.stage !== 'completed') || list[0] || null;
       setIns(current);
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setLoading(false);
     }
@@ -72,6 +73,28 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   useEffect(() => {
     setView(active);
   }, [active]);
+
+  // Si el contenedor fue eliminado desde la web/backend, el store deja de
+  // incluirlo tras el refetch → cerramos el detalle para no quedar en una
+  // pantalla huérfana con datos viejos.
+  const hadContainer = useRef(false);
+  useEffect(() => {
+    if (c) hadContainer.current = true;
+    else if (hadContainer.current) {
+      showToast(t('errorNotFound'), 'warn');
+      onClose();
+    }
+  }, [c, onClose, showToast, t]);
+
+  // Al volver la app a primer plano, recargar la inspección (reflejar cambios
+  // hechos en la web mientras el detalle estaba abierto: p. ej. inspección
+  // eliminada o media borrada). El store global ya refresca los contenedores.
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (st) => {
+      if (st === 'active') loadInspection();
+    });
+    return () => sub.remove();
+  }, [loadInspection]);
 
   const afterStatusChange = useCallback(async () => {
     await Promise.all([refreshContainers(), loadInspection()]);
@@ -85,7 +108,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       await refreshContainers();
       showToast(t('gpsActivated'), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
       throw e;
     }
   }, [c, refreshContainers, showToast, t]);
@@ -220,7 +243,7 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
                   showToast(t('visualInspection'), 'info');
                   afterStatusChange();
                 } catch (e: any) {
-                  showToast(e?.message || t('errorGeneric'), 'error');
+                  showToast(friendlyError(e, t), 'error');
                 }
               }}
             >
@@ -322,7 +345,8 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
                   onClose();
                   refreshContainers();
                 } catch (e: any) {
-                  showToast(e?.message || t('errorGeneric'), 'error');
+                  setDelOpen(false);
+                  showToast(friendlyError(e, t), 'error');
                 } finally {
                   setDeleting(false);
                 }
@@ -601,7 +625,7 @@ function VisualPanel({
       haptic('success');
       await reload();
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setUploads((u) => {
         const n = { ...u };
@@ -677,7 +701,7 @@ function VisualPanel({
               showToast(t('refuelInspection'), 'info');
               onChanged();
             } catch (e: any) {
-              showToast(e?.message || t('errorGeneric'), 'error');
+              showToast(friendlyError(e, t), 'error');
             }
           }}
         />
@@ -714,7 +738,7 @@ function VisualPanel({
                     showToast(t('refuelInspection'), 'info');
                     onChanged();
                   } catch (e: any) {
-                    showToast(e?.message || t('errorGeneric'), 'error');
+                    showToast(friendlyError(e, t), 'error');
                   }
                 }}
               >
@@ -756,7 +780,7 @@ function VisualPanel({
                 setUnavailReason('');
                 onChanged();
               } catch (e: any) {
-                showToast(e?.message || t('errorGeneric'), 'error');
+                showToast(friendlyError(e, t), 'error');
               } finally {
                 setUnavailBusy(false);
               }
@@ -884,7 +908,7 @@ function RefuelPanel({
       haptic('success');
       await reload();
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setVup(null);
     }
@@ -1017,7 +1041,7 @@ function RefuelPanel({
                 showToast(t('labelAvailable'), 'success');
                 onChanged();
               } catch (e: any) {
-                showToast(e?.message || t('errorGeneric'), 'error');
+                showToast(friendlyError(e, t), 'error');
               }
             }}
           >
@@ -1097,7 +1121,7 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
     setLabel(null);
     Insp.getInspectionLabel(ins.id)
       .then(setLabel)
-      .catch((e: any) => setLabelError(e?.message || t('errorGeneric')));
+      .catch((e: any) => setLabelError(friendlyError(e, t)));
   }, [ins, es, t]);
 
   useEffect(() => {
@@ -1118,7 +1142,7 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
         await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: t('thermalLabel') });
       }
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
@@ -1133,7 +1157,7 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
         html: `<html><body style="margin:0;display:flex;align-items:center;justify-content:center;padding:24px"><img src="${dataUri}" style="width:100%;max-width:520px"/></body></html>`,
       });
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
@@ -1199,7 +1223,7 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
               showToast(t('available'), 'success');
               onChanged();
             } catch (e: any) {
-              showToast(e?.message || t('errorGeneric'), 'error');
+              showToast(friendlyError(e, t), 'error');
             }
           }}
         >
@@ -1223,7 +1247,7 @@ function LabelPanel({ c, ins, onChanged }: { c: Container; ins: ContainerInspect
                   showToast(`${t('delivered')} → ${t.status('returning')}`, 'info');
                   onChanged();
                 } catch (e: any) {
-                  showToast(e?.message || t('errorGeneric'), 'error');
+                  showToast(friendlyError(e, t), 'error');
                 }
               }}
             >

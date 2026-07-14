@@ -395,15 +395,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     registerForPushToken().then((tok) => {
       if (tok) savePushToken(tok).catch(() => {});
     });
+    // Al volver la app a primer plano, re-sincronizar con la BD: notificaciones
+    // + contenedores/inspecciones (reflejar cambios hechos desde la web/backend,
+    // p. ej. una inspección o contenedor eliminado).
     const sub = RNAppState.addEventListener('change', (st) => {
-      if (st === 'active') refreshNotifications();
+      if (st === 'active') {
+        refreshNotifications();
+        refreshContainers();
+      }
     });
     const iv = setInterval(() => refreshNotifications(), 60000);
     return () => {
       sub.remove();
       clearInterval(iv);
     };
-  }, [phase, refreshNotifications]);
+  }, [phase, refreshNotifications, refreshContainers]);
 
   const value: AppState = {
     phase,

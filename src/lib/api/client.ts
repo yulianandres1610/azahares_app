@@ -22,6 +22,34 @@ function extractMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Traduce cualquier error de red/API a un mensaje amistoso y bilingüe para el
+ * usuario (403 → "no tenés permiso", 0 → "sin conexión", etc.), en vez de mostrar
+ * el texto crudo del backend. `t` es la función de i18n de la app.
+ */
+export function friendlyError(e: unknown, t: (k: string) => string): string {
+  const status = e instanceof ApiError ? e.status : undefined;
+  switch (status) {
+    case 0:
+      return t('errorNetwork');
+    case 401:
+      return t('errorSession');
+    case 403:
+      return t('errorNoPermission');
+    case 404:
+      return t('errorNotFound');
+    case 413:
+      return t('errorTooLarge');
+    default:
+      if (status && status >= 500) return t('errorServer');
+      // 400/409/422 y demás: el backend suele mandar un mensaje útil y legible.
+      if (e instanceof ApiError && typeof e.message === 'string' && e.message && !/^HTTP \d+$/.test(e.message)) {
+        return e.message;
+      }
+      return t('errorGeneric');
+  }
+}
+
 export interface ApiFetchOpts extends Omit<RequestInit, 'body'> {
   body?: unknown; // se serializa a JSON salvo que sea string/FormData
   auth?: boolean; // default true

@@ -10,6 +10,7 @@ import { AppText, Avatar, CheckMark, Field, IconButton, Screen, Sheet, Tap, hapt
 import { deviceLocale } from '../../i18n';
 import { useApp } from '../../store/AppContext';
 import { updateMe, uploadAvatar, deleteAvatar } from '../../lib/api/me';
+import { friendlyError } from '../../lib/api/client';
 import {
   connectWhatsapp,
   disconnectWhatsapp,
@@ -43,7 +44,7 @@ export function Profile() {
       haptic('success');
       showToast(t('done'));
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     }
   };
 
@@ -81,7 +82,7 @@ export function Profile() {
       const updated = await deleteAvatar();
       setMe(updated);
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     }
   };
 
@@ -274,7 +275,7 @@ function WhatsappSection() {
       }
     } catch (e: any) {
       setConnectOpen(false);
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
@@ -287,7 +288,7 @@ function WhatsappSection() {
       haptic('success');
       showToast(es ? 'Estado actualizado' : 'Status updated', 'success');
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
@@ -311,7 +312,7 @@ function WhatsappSection() {
               haptic('success');
               showToast(es ? 'WhatsApp desconectado' : 'WhatsApp disconnected', 'success');
             } catch (e: any) {
-              showToast(e?.message || t('errorGeneric'), 'error');
+              showToast(friendlyError(e, t), 'error');
             } finally {
               setBusy(false);
             }
@@ -547,7 +548,7 @@ function EditSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
       haptic('success');
       showToast(t('save'), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
@@ -711,7 +712,7 @@ function PasswordSheet({ open, onClose }: { open: boolean; onClose: () => void }
       onClose();
       showToast(t('pwUpdated'), 'success');
     } catch (e: any) {
-      showToast(e?.message || t('errorGeneric'), 'error');
+      showToast(friendlyError(e, t), 'error');
     } finally {
       setBusy(false);
     }
