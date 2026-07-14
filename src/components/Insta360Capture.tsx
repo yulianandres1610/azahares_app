@@ -103,6 +103,7 @@ export function Insta360Capture({
   const [loadingVideo, setLoadingVideo] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -265,17 +266,16 @@ export function Insta360Capture({
       setPhase('done');
       haptic('success');
       // Libera memoria: borra el video de la SD de la cámara tras subir OK.
+      // El resultado se muestra de forma persistente para diagnóstico.
+      setDeleteMsg(es ? 'Borrando de la cámara…' : 'Deleting from camera…');
       if (video.remoteUri) {
         deleteFromCamera(video.remoteUri)
-          .then(() => showToast(es ? 'Video borrado de la cámara' : 'Deleted from camera', 'info'))
+          .then(() => setDeleteMsg('✓ ' + (es ? 'Borrado de la cámara' : 'Deleted from camera')))
           .catch((e: any) =>
-            showToast(
-              (es ? 'No se borró de la cámara: ' : 'Not deleted from camera: ') + (e?.message ?? ''),
-              'warn',
-            ),
+            setDeleteMsg('✗ ' + (es ? 'No se borró: ' : 'Not deleted: ') + (e?.message ?? '')),
           );
       } else {
-        showToast(es ? 'La cámara no devolvió la ruta del video' : 'Camera returned no video path', 'warn');
+        setDeleteMsg('✗ ' + (es ? 'remoteUri vacío (la cámara no devolvió la ruta)' : 'empty remoteUri'));
       }
       await onUploaded();
     } catch (e: any) {
@@ -396,6 +396,11 @@ export function Insta360Capture({
               {es ? 'Video 360 subido' : '360 video uploaded'}
             </AppText>
           </View>
+          {deleteMsg && (
+            <AppText style={{ fontSize: 11.5, color: deleteMsg.startsWith('✗') ? colors.error : colors.ink50 }}>
+              {deleteMsg}
+            </AppText>
+          )}
           {/* Video ya subido (persistido) pero aún no descargado para el visor */}
           {!videoUri && media && (
             <Button variant="outline" icon="video" onPress={viewExisting} loading={loadingVideo} disabled={!media.url}>
