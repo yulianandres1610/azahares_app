@@ -3,7 +3,7 @@
 // módulo nativo `src/native/insta360.ts`. Si el módulo no está compilado en el
 // build, muestra un aviso en vez de romper.
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Linking, View } from 'react-native';
+import { Animated, Easing, Linking, Modal, View } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as FileSystem from 'expo-file-system/legacy';
 import { alpha, colors, radius } from '../theme/tokens';
@@ -97,6 +97,7 @@ export function Insta360Capture({
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [media, setMedia] = useState<InspectionMedia | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -231,7 +232,18 @@ export function Insta360Capture({
       setPhase('done');
       haptic('success');
       // Libera memoria: borra el video de la SD de la cámara tras subir OK.
-      if (video.remoteUri) deleteFromCamera(video.remoteUri).catch(() => {});
+      if (video.remoteUri) {
+        deleteFromCamera(video.remoteUri)
+          .then(() => showToast(es ? 'Video borrado de la cámara' : 'Deleted from camera', 'info'))
+          .catch((e: any) =>
+            showToast(
+              (es ? 'No se borró de la cámara: ' : 'Not deleted from camera: ') + (e?.message ?? ''),
+              'warn',
+            ),
+          );
+      } else {
+        showToast(es ? 'La cámara no devolvió la ruta del video' : 'Camera returned no video path', 'warn');
+      }
       await onUploaded();
     } catch (e: any) {
       setPhase('connected');
@@ -352,14 +364,36 @@ export function Insta360Capture({
             </AppText>
           </View>
           {/* Visor 360 esférico navegable (arrastrar para mirar alrededor) */}
-          {videoUri && Insta360PlayerNative && (
+          {videoUri && Insta360PlayerNative && !fullscreen && (
             <View style={{ width: '100%', aspectRatio: 1, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
               <Insta360PlayerNative source={videoUri} style={{ flex: 1 }} />
+              {/* Botón pantalla completa (esquina, no interfiere con el arrastre) */}
+              <Tap
+                onPress={() => setFullscreen(true)}
+                style={{ position: 'absolute', top: 10, right: 10, width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="scan" size={18} color="#fff" />
+              </Tap>
             </View>
           )}
           <AppText style={{ fontSize: 12, color: colors.ink50, textAlign: 'center' }}>
-            {es ? 'Arrastrá sobre el video para mirar en 360°. Podés eliminarlo y volver a grabar.' : 'Drag on the video to look around in 360°. You can delete it and record again.'}
+            {es ? 'Arrastrá para mirar en 360°. Tocá ⤢ para pantalla completa. Podés eliminarlo y volver a grabar.' : 'Drag to look around in 360°. Tap ⤢ for full screen. You can delete it and record again.'}
           </AppText>
+
+          {/* Pantalla completa */}
+          <Modal visible={fullscreen} animationType="fade" supportedOrientations={['portrait', 'landscape']} onRequestClose={() => setFullscreen(false)}>
+            <View style={{ flex: 1, backgroundColor: '#000' }}>
+              {videoUri && Insta360PlayerNative && (
+                <Insta360PlayerNative source={videoUri} style={{ flex: 1 }} />
+              )}
+              <Tap
+                onPress={() => setFullscreen(false)}
+                style={{ position: 'absolute', top: 54, right: 18, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="x" size={22} color="#fff" />
+              </Tap>
+            </View>
+          </Modal>
           <Button variant="danger" icon="trash" onPress={deleteAndRedo} loading={deleting} disabled={!editable}>
             {es ? 'Eliminar y grabar de nuevo' : 'Delete and record again'}
           </Button>
