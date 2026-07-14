@@ -53,9 +53,12 @@ export function isInsta360Available(): boolean {
   return native != null;
 }
 
-/** Vista nativa de preview en vivo de la cámara (null si el SDK no está). */
-export const Insta360PreviewNative: ComponentType<{ style?: any }> | null =
-  native != null ? (requireNativeView('Insta360') as ComponentType<{ style?: any }>) : null;
+/** Vista nativa del reproductor 360 esférico (null si el SDK no está).
+ *  Prop `source` = ruta del archivo .insv local. */
+export const Insta360PlayerNative: ComponentType<{ source: string; style?: any }> | null =
+  native != null
+    ? (requireNativeView('Insta360') as ComponentType<{ source: string; style?: any }>)
+    : null;
 
 export function getInsta360State(): Insta360State {
   return native ? native.getState() : 'disconnected';

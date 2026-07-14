@@ -6,7 +6,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Linking, View } from 'react-native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { alpha, colors, radius } from '../theme/tokens';
 import { AppText, Button, Tap, haptic } from './ui';
 import { GlobeSpinner } from './GlobeSpinner';
@@ -19,6 +18,7 @@ import {
   disconnectCamera,
   getCameraName,
   getInsta360State,
+  Insta360PlayerNative,
   isInsta360Available,
   onInsta360DownloadProgress,
   onInsta360StateChange,
@@ -98,10 +98,6 @@ export function Insta360Capture({
   const [media, setMedia] = useState<InspectionMedia | null>(null);
   const [deleting, setDeleting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Reproductor del video grabado (archivo local ya descargado).
-  const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = true;
-  });
 
   useEffect(() => {
     if (!available) return;
@@ -211,20 +207,20 @@ export function Insta360Capture({
     haptic('medium');
     try {
       const video = await stopRecording();
-      // Supabase infiere el MIME de la EXTENSIÓN del archivo, no del header. El
-      // video 360 llega como .insv (extensión desconocida → octet-stream → 415).
-      // Lo renombramos a .mp4 para que el bucket (que acepta video/mp4) lo tome.
+      // Para subir: Supabase infiere el MIME de la EXTENSIÓN (el .insv → 415), así
+      // que subimos una COPIA .mp4. Para el visor 360 mantenemos el .insv original
+      // (el reproductor esférico del SDK lo necesita).
       let uploadUri = video.uri;
       if (!/\.mp4$/i.test(uploadUri)) {
         const mp4 = uploadUri.replace(/\.[^./]+$/, '') + '.mp4';
         try {
-          await FileSystem.moveAsync({ from: uploadUri, to: mp4 });
+          await FileSystem.copyAsync({ from: uploadUri, to: mp4 });
           uploadUri = mp4;
         } catch {
-          /* si falla el rename, intentamos subir el original */
+          /* si falla la copia, subimos el original */
         }
       }
-      setVideoUri(uploadUri);
+      setVideoUri(video.uri); // .insv original → visor 360 esférico
       setPhase('uploading');
       setProgress(0);
       // putSigned reporta 0-100 → normalizamos a 0-1.
@@ -355,14 +351,14 @@ export function Insta360Capture({
               {es ? 'Video 360 subido' : '360 video uploaded'}
             </AppText>
           </View>
-          {/* Visor del video grabado */}
-          {videoUri && (
-            <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
-              <VideoView player={player} style={{ flex: 1 }} contentFit="contain" nativeControls />
+          {/* Visor 360 esférico navegable (arrastrar para mirar alrededor) */}
+          {videoUri && Insta360PlayerNative && (
+            <View style={{ width: '100%', aspectRatio: 1, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' }}>
+              <Insta360PlayerNative source={videoUri} style={{ flex: 1 }} />
             </View>
           )}
           <AppText style={{ fontSize: 12, color: colors.ink50, textAlign: 'center' }}>
-            {es ? 'Video 360° (formato Insta360). Podés eliminarlo y volver a grabar.' : '360° video (Insta360 format). You can delete it and record again.'}
+            {es ? 'Arrastrá sobre el video para mirar en 360°. Podés eliminarlo y volver a grabar.' : 'Drag on the video to look around in 360°. You can delete it and record again.'}
           </AppText>
           <Button variant="danger" icon="trash" onPress={deleteAndRedo} loading={deleting} disabled={!editable}>
             {es ? 'Eliminar y grabar de nuevo' : 'Delete and record again'}

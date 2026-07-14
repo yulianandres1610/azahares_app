@@ -173,8 +173,12 @@ public class Insta360Module: Module {
       }
     }
 
-    // Vista de preview en vivo (para encuadrar la toma desde el teléfono).
-    View(Insta360PreviewView.self) {}
+    // Reproductor 360 esférico del video grabado (navegable).
+    View(Insta360PlayerView.self) {
+      Prop("source") { (view: Insta360PlayerView, source: String) in
+        view.setSource(source)
+      }
+    }
 
     OnDestroy {
       self.stopPolling()
