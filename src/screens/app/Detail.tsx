@@ -18,13 +18,19 @@ import { useApp } from '../../store/AppContext';
 import { PUBLIC_WEB_URL } from '../../config';
 import * as Insp from '../../lib/api/inspections';
 import { friendlyError } from '../../lib/api/client';
-import { deleteContainer, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
+import { deleteContainer, deleteContainerImage, enableGps, getContainer, listContainerImages, listLocations } from '../../lib/api/containers';
 import type { ContainerImage } from '../../lib/api/containers';
 import { RemoteImage } from '../../components/RemoteImage';
 import { ImageLightbox } from '../../components/ImageLightbox';
 import { LocationCard, ActivateSheet, HistorySheet } from '../../components/Gps';
 import type { T } from '../../i18n';
 import type { Container, ContainerInspection, GpsFix, InspectionLabelData, InspectionMediaKind } from '../../lib/api/types';
+
+// Garantiza que la inspección siempre tenga un array `media` (algunas respuestas
+// del backend —p. ej. startInspection— lo omiten y romperían `ins.media.filter`).
+function withMedia(i: ContainerInspection | null): ContainerInspection | null {
+  return i ? { ...i, media: i.media ?? [] } : null;
+}
 
 export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   const { t, me, containers, refreshContainers, showToast } = useApp();
@@ -45,9 +51,13 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
   // Paso activo. Tras complete-refuel el backend deja el contenedor en
   // refuel_inspection pero la inspección ya tiene refuelCompletedAt → avanzar
   // al paso Etiqueta (donde se marca disponible).
+  // Estados terminales de fallo: no forman parte del flujo de 3 pasos.
+  const isUnavailable = !!c && (c.status === 'unavailable' || c.status === 'maintenance');
   const active = !c
     ? 0
     : c.status === 'visual_inspection'
+    ? 0
+    : isUnavailable
     ? 0
     : c.status === 'refuel_inspection'
     ? ins?.refuelCompletedAt
@@ -60,8 +70,17 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       if (!c) return;
       try {
         const list = await Insp.listInspections(c.id);
-        const current = list.find((i) => i.stage !== 'completed') || list[0] || null;
-        setIns(current);
+        // Para un contenedor No disponible/mantenimiento elegimos la inspección que
+        // guarda el motivo (la marcada unavailable), no una visual suelta que pudo
+        // quedar de un "Volver a inspeccionar". El resto: la inspección en curso.
+        const current =
+          c.status === 'unavailable' || c.status === 'maintenance'
+            ? list.find((i) => i.unavailableAt || i.unavailableReason) ||
+              list.find((i) => i.stage === 'completed') ||
+              list[0] ||
+              null
+            : list.find((i) => i.stage !== 'completed') || list[0] || null;
+        setIns(withMedia(current));
       } catch (e: any) {
         // En recargas de fondo (volver a primer plano) no molestamos con toasts:
         // durante la captura Insta360 el teléfono está en el WiFi de la cámara
@@ -73,6 +92,27 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
     },
     [c, showToast, t],
   );
+
+  // Garantiza que exista una inspección y devuelve la actual. Se usa justo antes
+  // de subir el video 360: si la carga inicial falló (el iPhone estaba en el WiFi
+  // de la cámara, sin internet) recargamos; si de verdad no existe una inspección
+  // en curso, la iniciamos. Nunca lanza: devuelve null si no se pudo resolver.
+  const ensureInspection = useCallback(async (): Promise<ContainerInspection | null> => {
+    if (!c) return null;
+    try {
+      const list = await Insp.listInspections(c.id);
+      let current: ContainerInspection | null = list.find((i) => i.stage !== 'completed') || list[0] || null;
+      if (!current && c.status === 'visual_inspection') {
+        // startInspection puede devolver la inspección SIN el array `media`.
+        current = withMedia(await Insp.startInspection(c.id));
+      }
+      current = withMedia(current);
+      if (current) setIns(current);
+      return current;
+    } catch {
+      return null;
+    }
+  }, [c]);
 
   useEffect(() => {
     loadInspection();
@@ -149,11 +189,13 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
 
   const meta = statusMeta(c.status);
   const tt = TYPES[c.type] ?? { icon: 'cube' as IconName };
-  const vc = ins ? ins.media.filter((m) => VISUAL_KINDS.includes(m.kind)).length : 0;
+  const vc = ins?.media ? ins.media.filter((m) => VISUAL_KINDS.includes(m.kind)).length : 0;
   const steps = [t('visualInspection'), t('refuelInspection'), t('labelAvailable')];
-  const overall = Math.round(
-    (((active >= 1 ? 1 : vc / 7) + (active >= 2 ? 1 : 0) + (c.status === 'available' || active > 2 ? 1 : 0)) / 3) * 100,
-  );
+  const overall = isUnavailable
+    ? 0
+    : Math.round(
+        (((active >= 1 ? 1 : vc / 7) + (active >= 2 ? 1 : 0) + (c.status === 'available' || active > 2 ? 1 : 0)) / 3) * 100,
+      );
 
   const metaCells: [string, string][] = [
     [t('type'), t(c.type)],
@@ -260,25 +302,34 @@ export function Detail({ id, onClose }: { id: string; onClose: () => void }) {
         </View>
       )}
 
-      {/* stepper */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 6 }}>
-        <ReviewStepper steps={steps} current={active} view={view} onPick={setView} />
-      </View>
-
-      {/* panels */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        {loading ? (
-          <View style={{ paddingVertical: 50, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.navy500} />
+      {isUnavailable ? (
+        /* Estado terminal de fallo: sin stepper ni etiqueta, solo el motivo. */
+        <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+          <UnavailablePanel c={c} ins={ins} onReactivated={afterStatusChange} reload={loadInspection} />
+        </View>
+      ) : (
+        <>
+          {/* stepper */}
+          <View style={{ paddingHorizontal: 20, paddingTop: 18, paddingBottom: 6 }}>
+            <ReviewStepper steps={steps} current={active} view={view} onPick={setView} />
           </View>
-        ) : (
-          <>
-            {view === 0 && <VisualPanel c={c} ins={ins} editable={c.status === 'visual_inspection'} onChanged={afterStatusChange} reload={loadInspection} />}
-            {view === 1 && <RefuelPanel c={c} ins={ins} editable={c.status === 'refuel_inspection'} onChanged={afterStatusChange} reload={loadInspection} />}
-            {view === 2 && <LabelPanel c={c} ins={ins} onChanged={afterStatusChange} />}
-          </>
-        )}
-      </View>
+
+          {/* panels */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+            {loading ? (
+              <View style={{ paddingVertical: 50, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.navy500} />
+              </View>
+            ) : (
+              <>
+                {view === 0 && <VisualPanel c={c} ins={ins} editable={c.status === 'visual_inspection'} onChanged={afterStatusChange} reload={loadInspection} ensureInspection={ensureInspection} />}
+                {view === 1 && <RefuelPanel c={c} ins={ins} editable={c.status === 'refuel_inspection'} onChanged={afterStatusChange} reload={loadInspection} />}
+                {view === 2 && <LabelPanel c={c} ins={ins} onChanged={afterStatusChange} />}
+              </>
+            )}
+          </View>
+        </>
+      )}
 
       {/* history button */}
       <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
@@ -401,22 +452,25 @@ function ContainerInfoPanel({
     };
   }, [c.id]);
   const cc = full;
+  const { showToast } = useApp();
+  const es = t.locale === 'es';
   const meta = statusMeta(cc.status);
   const tt = TYPES[cc.type] ?? { icon: 'cube' as IconName };
   const [imgs, setImgs] = useState<ContainerImage[]>([]);
   const [imgsLoading, setImgsLoading] = useState(true);
   const [viewUrl, setViewUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
+  const [confirmImg, setConfirmImg] = useState<ContainerImage | null>(null);
+  const [deletingImg, setDeletingImg] = useState(false);
+  const loadImgs = useCallback(() => {
     setImgsLoading(true);
-    listContainerImages(c.id)
-      .then((r) => alive && setImgs(r))
-      .catch(() => alive && setImgs([]))
-      .finally(() => alive && setImgsLoading(false));
-    return () => {
-      alive = false;
-    };
+    return listContainerImages(c.id)
+      .then((r) => setImgs(r))
+      .catch(() => setImgs([]))
+      .finally(() => setImgsLoading(false));
   }, [c.id]);
+  useEffect(() => {
+    loadImgs();
+  }, [loadImgs]);
 
   const tileW = (Dimensions.get('window').width - 32 - 32 - 10) / 2;
   const tileH = Math.round(tileW * 0.81);
@@ -442,7 +496,15 @@ function ContainerInfoPanel({
         ) : photos.length ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
             {photos.map((im, i) => (
-              <CreationPhoto key={im.id} url={im.url} label={t(SIDE_KEYS[i] ?? 'photoOpt')} w={tileW} h={tileH} onView={setViewUrl} />
+              <CreationPhoto
+                key={im.id}
+                url={im.url}
+                label={t(SIDE_KEYS[i] ?? 'photoOpt')}
+                w={tileW}
+                h={tileH}
+                onView={setViewUrl}
+                onDelete={() => setConfirmImg(im)}
+              />
             ))}
           </View>
         ) : (
@@ -479,6 +541,51 @@ function ContainerInfoPanel({
       {/* GPS */}
       <LocationCard c={cc} t={t} onActivate={onActivateGps} onHistory={onHistory} onSync={onSync} />
 
+      {/* Confirmar borrado de foto de creación */}
+      <Sheet open={!!confirmImg} onClose={() => !deletingImg && setConfirmImg(null)}>
+        <View style={{ paddingHorizontal: 20, paddingBottom: 28, alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: alpha(colors.error, 0.12), alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <Icon name="trash" size={30} color={colors.error} />
+          </View>
+          <AppText serif weight="600" style={{ fontSize: 20 }}>
+            {es ? '¿Eliminar foto?' : 'Delete photo?'}
+          </AppText>
+          <AppText style={{ fontSize: 13.5, color: colors.ink50, marginTop: 6, textAlign: 'center', lineHeight: 19 }}>
+            {es
+              ? 'Se eliminará esta foto de creación. Esta acción no se puede deshacer.'
+              : 'This creation photo will be removed. This cannot be undone.'}
+          </AppText>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 22, width: '100%' }}>
+            <Button variant="outline" onPress={() => setConfirmImg(null)} disabled={deletingImg} style={{ flex: 1 }}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              icon="trash"
+              loading={deletingImg}
+              style={{ flex: 1 }}
+              onPress={async () => {
+                if (!confirmImg || deletingImg) return;
+                setDeletingImg(true);
+                try {
+                  await deleteContainerImage(c.id, confirmImg.id);
+                  haptic('success');
+                  setConfirmImg(null);
+                  await loadImgs();
+                  showToast(es ? 'Foto eliminada' : 'Photo deleted', 'success');
+                } catch (e: any) {
+                  showToast(friendlyError(e, t), 'error');
+                } finally {
+                  setDeletingImg(false);
+                }
+              }}
+            >
+              {t('remove')}
+            </Button>
+          </View>
+        </View>
+      </Sheet>
+
       {/* Visor de foto a pantalla completa */}
       <ImageLightbox url={viewUrl} onClose={() => setViewUrl(null)} />
     </View>
@@ -486,7 +593,7 @@ function ContainerInfoPanel({
 }
 
 // Foto de creación: descarga vía expo-file-system y muestra desde archivo local.
-function CreationPhoto({ url, label, w, h, onView }: { url: string | null; label: string; w: number; h: number; onView?: (url: string) => void }) {
+function CreationPhoto({ url, label, w, h, onView, onDelete }: { url: string | null; label: string; w: number; h: number; onView?: (url: string) => void; onDelete?: () => void }) {
   return (
     <Tap
       onPress={() => url && onView?.(url)}
@@ -497,6 +604,16 @@ function CreationPhoto({ url, label, w, h, onView }: { url: string | null; label
       <View style={{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(8,14,33,0.55)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
         <AppText weight="600" style={{ fontSize: 11, color: '#fff' }}>{label}</AppText>
       </View>
+      {/* Eliminar foto (puede quedar mal tomada) */}
+      {url && onDelete ? (
+        <Tap
+          onPress={onDelete}
+          hapticKind="light"
+          style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: 999, backgroundColor: 'rgba(214,45,45,0.92)', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name="trash" size={15} color="#fff" />
+        </Tap>
+      ) : null}
       {url ? (
         <View style={{ position: 'absolute', bottom: 8, right: 8, width: 28, height: 28, borderRadius: 999, backgroundColor: 'rgba(8,14,33,0.6)', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="search" size={14} color="#fff" />
@@ -601,6 +718,118 @@ function ReviewStepper({ steps, current, view, onPick }: { steps: string[]; curr
   );
 }
 
+// ── Estado terminal: No disponible / Mantenimiento ───────────
+function UnavailablePanel({
+  c,
+  ins,
+  onReactivated,
+  reload,
+}: {
+  c: Container;
+  ins: ContainerInspection | null;
+  onReactivated: () => void;
+  reload: () => Promise<void>;
+}) {
+  const { t, showToast } = useApp();
+  const es = t.locale === 'es';
+  const [busy, setBusy] = useState(false);
+  const maint = c.status === 'maintenance';
+  // Motivo desde el campo dedicado del backend (fallback a notes para datos viejos).
+  const reason = ins?.unavailableReason?.trim() || ins?.notes?.trim() || null;
+  const who = ins?.unavailableByName?.trim() || null;
+  const whenStr = ins?.unavailableAt
+    ? new Date(ins.unavailableAt).toLocaleString(es ? 'es' : 'en', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
+
+  return (
+    <View style={{ gap: 16 }}>
+      {/* Tarjeta de estado */}
+      <View style={{ backgroundColor: alpha(colors.error, 0.08), borderRadius: radius.lg, borderWidth: 1, borderColor: alpha(colors.error, 0.25), padding: 20, alignItems: 'center', gap: 12 }}>
+        <View style={{ width: 60, height: 60, borderRadius: 18, backgroundColor: alpha(colors.error, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={maint ? 'settings' : 'alert'} size={30} color={colors.error} />
+        </View>
+        <AppText serif weight="600" style={{ fontSize: 19, color: colors.ink, textAlign: 'center' }}>
+          {maint ? (es ? 'En mantenimiento' : 'Under maintenance') : es ? 'Contenedor no disponible' : 'Container unavailable'}
+        </AppText>
+        <AppText style={{ fontSize: 13.5, color: colors.ink60, textAlign: 'center', lineHeight: 19 }}>
+          {maint
+            ? es
+              ? 'Este contenedor está fuera de servicio por mantenimiento.'
+              : 'This container is out of service for maintenance.'
+            : es
+            ? 'Salió del pool de disponibles y no continúa la inspección.'
+            : 'It left the available pool and the inspection does not continue.'}
+        </AppText>
+      </View>
+
+      {/* Motivo + quién lo marcó y cuándo (todo desde el backend) */}
+      {(reason || who || whenStr) && (
+        <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 16, gap: 10 }}>
+          {reason && (
+            <View style={{ gap: 6 }}>
+              <AppText weight="700" style={{ fontSize: 11.5, color: colors.ink50, letterSpacing: 0.4 }}>
+                {(es ? 'Motivo' : 'Reason').toUpperCase()}
+              </AppText>
+              <AppText style={{ fontSize: 14, color: colors.ink, lineHeight: 20 }}>{reason}</AppText>
+            </View>
+          )}
+          {(who || whenStr) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: reason ? 1 : 0, borderTopColor: colors.line, paddingTop: reason ? 10 : 0 }}>
+              <Icon name="user" size={15} color={colors.ink40} />
+              <AppText style={{ flex: 1, fontSize: 12.5, color: colors.ink60 }}>
+                {who ? (es ? `Marcado por ${who}` : `Marked by ${who}`) : es ? 'Marcado como no disponible' : 'Marked unavailable'}
+                {whenStr ? ` · ${whenStr}` : ''}
+              </AppText>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Datos del ciclo */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: 14 }}>
+        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: alpha(colors.navy500, 0.11), alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="history" size={18} color={colors.navy700} />
+        </View>
+        <AppText weight="600" style={{ flex: 1, fontSize: 14, color: colors.ink }}>
+          {t('cycle')} {c.cycle ?? 1}
+        </AppText>
+        {ins?.inspectionNumber ? (
+          <AppText weight="600" style={{ fontSize: 12.5, color: colors.ink40 }}>{ins.inspectionNumber}</AppText>
+        ) : null}
+      </View>
+
+      {/* Volver a inspeccionar (reinicia el flujo si el backend lo permite) */}
+      {!maint && (
+        <Button
+          icon="refresh"
+          loading={busy}
+          onPress={async () => {
+            if (busy) return;
+            setBusy(true);
+            try {
+              await Insp.startInspection(c.id);
+              showToast(es ? 'Inspección reiniciada' : 'Inspection restarted', 'success');
+              onReactivated();
+            } catch (e: any) {
+              showToast(friendlyError(e, t), 'error');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {es ? 'Volver a inspeccionar' : 'Re-inspect'}
+        </Button>
+      )}
+    </View>
+  );
+}
+
 // ── Paso 1: Visual ───────────────────────────────────────────
 function VisualPanel({
   c,
@@ -608,12 +837,14 @@ function VisualPanel({
   editable,
   onChanged,
   reload,
+  ensureInspection,
 }: {
   c: Container;
   ins: ContainerInspection | null;
   editable: boolean;
   onChanged: () => void;
   reload: () => Promise<void>;
+  ensureInspection: () => Promise<ContainerInspection | null>;
 }) {
   const { t, showToast } = useApp();
   const [uploads, setUploads] = useState<Record<string, number>>({});
@@ -624,7 +855,7 @@ function VisualPanel({
   // Método de captura de la inspección visual: cámara del móvil (7 fotos) o
   // una sola toma 360 con cámara Insta360. Si ya hay un video 360 subido,
   // abrimos el método Insta360 para mostrarlo (no los slots de fotos vacíos).
-  const hasPano = !!ins?.media.some((m) => m.kind === 'panorama_360');
+  const hasPano = !!ins?.media?.some((m) => m.kind === 'panorama_360');
   const [method, setMethod] = useState<'phone' | 'insta360'>(hasPano ? 'insta360' : 'phone');
   const es = t.locale === 'es';
   useEffect(() => {
@@ -632,17 +863,27 @@ function VisualPanel({
   }, [hasPano]);
   const byKind = useMemo(() => {
     const m: Record<string, string | null> = {};
-    ins?.media.forEach((x) => (m[x.kind] = x.url));
+    ins?.media?.forEach((x) => (m[x.kind] = x.url));
     return m;
   }, [ins]);
-  const vc = ins ? ins.media.filter((m) => VISUAL_KINDS.includes(m.kind)).length : 0;
+  const vc = ins?.media ? ins.media.filter((m) => VISUAL_KINDS.includes(m.kind)).length : 0;
   const left = 7 - vc;
 
+  // Resuelve la inspección para actuar sobre ella. Si `ins` no cargó (el iPhone
+  // estaba en el WiFi de la cámara, sin internet), la recarga/crea. Devuelve null
+  // si de plano no se pudo — para que las acciones muestren error en vez de fallar
+  // en silencio.
+  const resolveIns = async (): Promise<ContainerInspection | null> => ins ?? (await ensureInspection());
+
   const upload = async (slot: InspectionMediaKind, uri: string, mime?: string | null) => {
-    if (!ins) return;
     setUploads((u) => ({ ...u, [slot]: 0 }));
     try {
-      await Insp.uploadInspectionMedia(ins.id, slot, uri, mime || 'image/jpeg', (pct) => setUploads((u) => ({ ...u, [slot]: pct })));
+      const insp = await resolveIns();
+      if (!insp) {
+        showToast(es ? 'No se pudo cargar la inspección. Revisá tu conexión.' : 'Could not load the inspection. Check your connection.', 'error');
+        return;
+      }
+      await Insp.uploadInspectionMedia(insp.id, slot, uri, mime || 'image/jpeg', (pct) => setUploads((u) => ({ ...u, [slot]: pct })));
       haptic('success');
       await reload();
     } catch (e: any) {
@@ -712,13 +953,18 @@ function VisualPanel({
       {method === 'insta360' ? (
         <Insta360Capture
           inspectionId={ins?.id ?? null}
+          ensureInspectionId={async () => (await ensureInspection())?.id ?? null}
           editable={editable}
           onUploaded={reload}
-          existingPano={ins?.media.find((m) => m.kind === 'panorama_360') ?? null}
+          existingPano={ins?.media?.find((m) => m.kind === 'panorama_360') ?? null}
           onComplete={async () => {
-            if (!ins) return;
             try {
-              await Insp.completeVisual(ins.id);
+              const insp = await resolveIns();
+              if (!insp) {
+                showToast(es ? 'No se pudo cargar la inspección. Revisá tu conexión.' : 'Could not load the inspection. Check your connection.', 'error');
+                return;
+              }
+              await Insp.completeVisual(insp.id);
               showToast(t('refuelInspection'), 'info');
               onChanged();
             } catch (e: any) {
@@ -754,9 +1000,13 @@ function VisualPanel({
                 disabled={vc < 7}
                 icon="check"
                 onPress={async () => {
-                  if (!ins) return;
                   try {
-                    await Insp.completeVisual(ins.id);
+                    const insp = await resolveIns();
+                    if (!insp) {
+                      showToast(es ? 'No se pudo cargar la inspección. Revisá tu conexión.' : 'Could not load the inspection. Check your connection.', 'error');
+                      return;
+                    }
+                    await Insp.completeVisual(insp.id);
                     showToast(t('refuelInspection'), 'info');
                     onChanged();
                   } catch (e: any) {
@@ -776,27 +1026,78 @@ function VisualPanel({
 
       {/* Marcar NO DISPONIBLE — motivo obligatorio */}
       <Sheet open={unavailOpen} onClose={() => !unavailBusy && setUnavailOpen(false)} title={t('markUnavailable')}>
-        <View style={{ gap: 14 }}>
-          <AppText style={{ fontSize: 13.5, color: colors.ink60, lineHeight: 19 }}>
-            {t('markUnavailableHint')}
-          </AppText>
+        <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 18 }}>
+          {/* Aviso con icono destacado */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: alpha(colors.error, 0.08), borderRadius: radius.lg, padding: 14 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: alpha(colors.error, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="alert" size={23} color={colors.error} />
+            </View>
+            <AppText style={{ flex: 1, fontSize: 13, color: colors.ink70, lineHeight: 18.5 }}>
+              {t('markUnavailableHint')}
+            </AppText>
+          </View>
+
+          {/* Motivos comunes (chips de selección rápida) */}
+          <View style={{ gap: 10 }}>
+            <AppText weight="700" style={{ fontSize: 11.5, color: colors.ink50, letterSpacing: 0.4 }}>
+              {(es ? 'Motivos comunes' : 'Common reasons').toUpperCase()}
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {(es
+                ? ['Daño estructural', 'Fuga', 'Válvula dañada', 'Contaminación', 'Óxido / corrosión']
+                : ['Structural damage', 'Leak', 'Damaged valve', 'Contamination', 'Rust / corrosion']
+              ).map((r) => {
+                const active = unavailReason.trim().toLowerCase() === r.toLowerCase();
+                return (
+                  <Tap key={r} onPress={() => setUnavailReason(active ? '' : r)} hapticKind="light">
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 13,
+                        paddingVertical: 9,
+                        borderRadius: 999,
+                        borderWidth: 1.5,
+                        borderColor: active ? colors.error : colors.line,
+                        backgroundColor: active ? alpha(colors.error, 0.09) : colors.surface,
+                      }}
+                    >
+                      {active && <Icon name="check" size={13} color={colors.error} />}
+                      <AppText weight="600" style={{ fontSize: 12.5, color: active ? colors.error : colors.ink60 }}>
+                        {r}
+                      </AppText>
+                    </View>
+                  </Tap>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Detalle libre del motivo */}
           <Field
-            label={t('reason')}
+            label={es ? 'Detalle del motivo' : 'Reason detail'}
             value={unavailReason}
             onChangeText={setUnavailReason}
             placeholder={t('reasonPlaceholder')}
             autoCapitalize="sentences"
-            autoFocus
           />
+
           <Button
             variant="danger"
             icon="alert"
             disabled={!unavailReason.trim() || unavailBusy}
+            loading={unavailBusy}
             onPress={async () => {
-              if (!ins || !unavailReason.trim()) return;
+              if (!unavailReason.trim()) return;
               setUnavailBusy(true);
               try {
-                await Insp.markUnavailable(ins.id, unavailReason.trim());
+                const insp = await resolveIns();
+                if (!insp) {
+                  showToast(es ? 'No se pudo cargar la inspección. Revisá tu conexión.' : 'Could not load the inspection. Check your connection.', 'error');
+                  return;
+                }
+                await Insp.markUnavailable(insp.id, unavailReason.trim());
                 showToast(t('markedUnavailable'), 'success');
                 setUnavailOpen(false);
                 setUnavailReason('');
@@ -928,7 +1229,7 @@ function RefuelPanel({
   const [company, setCompany] = useState(ins?.inspectionCompany || '');
   const [product, setProduct] = useState(ins?.productType || '');
 
-  const video = ins?.media.find((m) => m.kind === 'refuel_video');
+  const video = ins?.media?.find((m) => m.kind === 'refuel_video');
   const hasVideo = !!video;
   const videoH = Math.round(((Dimensions.get('window').width - 32) * 9) / 16);
   const canComplete = hasVideo && sealTop.trim() && sealBottom.trim();

@@ -131,6 +131,11 @@ export interface ContainerInspection {
   refuelCompletedAt: string | null;
   completedAt: string | null;
   labelGeneratedAt: string | null;
+  // Marcado como "No disponible": motivo, cuándo y quién lo marcó.
+  unavailableReason: string | null;
+  unavailableAt: string | null;
+  unavailableByUserId: string | null;
+  unavailableByName: string | null;
   createdAt: string;
   media: InspectionMedia[];
 }

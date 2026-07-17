@@ -132,6 +132,11 @@ export async function listContainerImages(id: string): Promise<ContainerImage[]>
     : [];
 }
 
+// Elimina una foto de creación (el backend borra de Storage + BD y audita).
+export async function deleteContainerImage(containerId: string, imageId: string): Promise<void> {
+  await apiFetch<void>(`/containers/${containerId}/images/${imageId}`, { method: 'DELETE' });
+}
+
 // Historial de ubicaciones (recorrido) de un contenedor.
 export async function listLocations(id: string, limit = 50): Promise<GpsFix[]> {
   const rows = await apiFetch<any[]>(`/containers/${id}/locations?limit=${limit}`);

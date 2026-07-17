@@ -77,12 +77,20 @@ function fmtTime(s: number): string {
 
 export function Insta360Capture({
   inspectionId,
+  ensureInspectionId,
   editable,
   onUploaded,
   existingPano,
   onComplete,
 }: {
   inspectionId: string | null;
+  /**
+   * Garantiza que exista una inspección justo antes de subir y devuelve su id.
+   * Cubre el caso en que la carga inicial falló (el iPhone estaba en el WiFi de
+   * la cámara, sin internet) y `inspectionId` quedó en null: recarga (y crea si
+   * de verdad falta) para no perder el video ya grabado.
+   */
+  ensureInspectionId?: () => Promise<string | null>;
   editable: boolean;
   onUploaded: () => void | Promise<void>;
   /** Video 360 ya subido en esta inspección (persistencia entre pestañas). */
@@ -250,15 +258,29 @@ export function Insta360Capture({
     haptic('medium');
     try {
       const video = await stopRecording();
-      if (!inspectionId) {
+      setVideoUri(video.uri); // .insv → visor 360 esférico en la app (se conserva aunque falle la subida)
+      // La inspección puede no estar cargada si al abrir el detalle el iPhone ya
+      // estaba en el WiFi de la cámara (sin internet). Antes de subir, la
+      // resolvemos (recargar/crear) para no perder el video ya grabado.
+      let inspId = inspectionId;
+      if (!inspId && ensureInspectionId) {
+        setPhase('processing');
+        try {
+          inspId = await ensureInspectionId();
+        } catch {
+          inspId = null;
+        }
+      }
+      if (!inspId) {
         setPhase('connected');
         showToast(
-          es ? 'No hay una inspección activa para subir el video.' : 'No active inspection to upload the video.',
+          es
+            ? 'No hay una inspección activa para subir el video. Revisá tu conexión y volvé a intentar.'
+            : 'No active inspection to upload the video. Check your connection and try again.',
           'error',
         );
         return;
       }
-      setVideoUri(video.uri); // .insv → visor 360 esférico en la app
       // Une el .insv (doble ojo de pez) a un MP4 equirectangular estándar, que
       // se ve en la web y en cualquier player. El .insv se conserva para el
       // visor esférico de la app. Si el "unir" falla o tarda demasiado, NO
@@ -294,7 +316,7 @@ export function Insta360Capture({
       setPhase('uploading');
       setProgress(0);
       // putSigned reporta 0-100 → normalizamos a 0-1.
-      const saved = await uploadInspectionMedia(inspectionId, 'panorama_360', uploadUri, 'video/mp4', (pct) =>
+      const saved = await uploadInspectionMedia(inspId, 'panorama_360', uploadUri, 'video/mp4', (pct) =>
         setProgress(pct / 100),
       );
       setMedia(saved);
